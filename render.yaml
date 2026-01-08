@@ -1,35 +1,19 @@
 services:
   - type: web
     name: java-migration-accelerator
-    runtime: docker
-    buildCommand: "docker build -t java-migration ."
-    startCommand: "./start.sh"
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port 10000"
     envVars:
       - key: GITHUB_TOKEN
         sync: false
       - key: GITLAB_TOKEN
         sync: false
-      - key: SMTP_SERVER
-        sync: false
-      - key: SMTP_PORT
-        sync: false
       - key: SMTP_USERNAME
         sync: false
       - key: SMTP_PASSWORD
         sync: false
-      - key: SONARQUBE_URL
-        sync: false
       - key: SONARQUBE_TOKEN
         sync: false
-      - key: WORK_DIR
-        fromService:
-          type: pvc
-          name: migration-storage
-          property: hostPath
-      - key: GITLAB_URL
-        sync: false
-
-  - type: pvc
-    name: migration-storage
-    mountPath: /tmp/migrations
-    size: 10
+      - key: PYTHON_VERSION
+        value: "3.11"
