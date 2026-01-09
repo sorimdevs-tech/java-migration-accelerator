@@ -3,13 +3,13 @@
  * Updated: 2026-01-09 - Now using Netlify Functions for backend
  */
 
-const API_BASE_URL = (import.meta.env?.VITE_API_URL || 'https://java-migration-accelerator.onrender.com') + '/api';
+export const API_BASE_URL = (import.meta.env?.VITE_API_URL || 'https://java-migration-accelerator.onrender.com') + '/api';
 
 // For Netlify deployment, use Netlify Functions
-const isNetlify = window.location.hostname.includes('netlify.app');
-const NETLIFY_API_BASE = isNetlify ? '/.netlify/functions/api' : API_BASE_URL;
+const isNetlify = typeof window !== 'undefined' && window.location?.hostname?.includes('netlify.app');
+export const NETLIFY_API_BASE = isNetlify ? '/.netlify/functions/api' : API_BASE_URL;
 
-const FINAL_API_BASE = isNetlify ? NETLIFY_API_BASE : API_BASE_URL;
+export const FINAL_API_BASE = isNetlify ? NETLIFY_API_BASE : API_BASE_URL;
 
 export interface RepoInfo {
   name: string;
@@ -151,7 +151,7 @@ export interface JavaVersionInfo {
 
 // Fetch GitHub repositories
 export async function fetchRepositories(token: string): Promise<RepoInfo[]> {
-  const response = await fetch(`${API_BASE_URL}/github/repos?token=${encodeURIComponent(token)}`);
+  const response = await fetch(`${FINAL_API_BASE}/github/repos?token=${encodeURIComponent(token)}`);
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to fetch repositories');
@@ -162,7 +162,7 @@ export async function fetchRepositories(token: string): Promise<RepoInfo[]> {
 // Analyze a repository
 export async function analyzeRepository(token: string, owner: string, repo: string): Promise<RepoAnalysis> {
   const response = await fetch(
-    `${API_BASE_URL}/github/repo/${owner}/${repo}/analyze?token=${encodeURIComponent(token)}`
+    `${FINAL_API_BASE}/github/repo/${owner}/${repo}/analyze?token=${encodeURIComponent(token)}`
   );
   if (!response.ok) {
     const error = await response.json();
@@ -174,7 +174,7 @@ export async function analyzeRepository(token: string, owner: string, repo: stri
 // NEW: Analyze repository directly by URL (works for public repos without token)
 export async function analyzeRepoUrl(repoUrl: string, token: string = ""): Promise<RepoUrlAnalysis> {
   const response = await fetch(
-    `${API_BASE_URL}/github/analyze-url?repo_url=${encodeURIComponent(repoUrl)}&token=${encodeURIComponent(token)}`
+    `${FINAL_API_BASE}/github/analyze-url?repo_url=${encodeURIComponent(repoUrl)}&token=${encodeURIComponent(token)}`
   );
   if (!response.ok) {
     const error = await response.json();
@@ -186,7 +186,7 @@ export async function analyzeRepoUrl(repoUrl: string, token: string = ""): Promi
 // NEW: List files in a repository (works for public repos without token)
 export async function listRepoFiles(repoUrl: string, token: string = "", path: string = ""): Promise<RepoFilesResponse> {
   const response = await fetch(
-    `${API_BASE_URL}/github/list-files?repo_url=${encodeURIComponent(repoUrl)}&token=${encodeURIComponent(token)}&path=${encodeURIComponent(path)}`
+    `${FINAL_API_BASE}/github/list-files?repo_url=${encodeURIComponent(repoUrl)}&token=${encodeURIComponent(token)}&path=${encodeURIComponent(path)}`
   );
   if (!response.ok) {
     const error = await response.json();
@@ -198,7 +198,7 @@ export async function listRepoFiles(repoUrl: string, token: string = "", path: s
 // NEW: Get file content (works for public repos without token)
 export async function getFileContent(repoUrl: string, filePath: string, token: string = ""): Promise<FileContentResponse> {
   const response = await fetch(
-    `${API_BASE_URL}/github/file-content?repo_url=${encodeURIComponent(repoUrl)}&file_path=${encodeURIComponent(filePath)}&token=${encodeURIComponent(token)}`
+    `${FINAL_API_BASE}/github/file-content?repo_url=${encodeURIComponent(repoUrl)}&file_path=${encodeURIComponent(filePath)}&token=${encodeURIComponent(token)}`
   );
   if (!response.ok) {
     const error = await response.json();
@@ -209,7 +209,7 @@ export async function getFileContent(repoUrl: string, filePath: string, token: s
 
 // Get available Java versions
 export async function getJavaVersions(): Promise<JavaVersionInfo> {
-  const response = await fetch(`${API_BASE_URL}/java-versions`);
+  const response = await fetch(`${FINAL_API_BASE}/java-versions`);
   if (!response.ok) {
     throw new Error('Failed to fetch Java versions');
   }
@@ -218,7 +218,7 @@ export async function getJavaVersions(): Promise<JavaVersionInfo> {
 
 // Get available conversion types
 export async function getConversionTypes(): Promise<ConversionType[]> {
-  const response = await fetch(`${API_BASE_URL}/conversion-types`);
+  const response = await fetch(`${FINAL_API_BASE}/conversion-types`);
   if (!response.ok) {
     throw new Error('Failed to fetch conversion types');
   }
@@ -227,7 +227,7 @@ export async function getConversionTypes(): Promise<ConversionType[]> {
 
 // Start migration
 export async function startMigration(request: MigrationRequest): Promise<MigrationResult> {
-  const response = await fetch(`${API_BASE_URL}/migration/start`, {
+  const response = await fetch(`${FINAL_API_BASE}/migration/start`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -243,7 +243,7 @@ export async function startMigration(request: MigrationRequest): Promise<Migrati
 
 // Get migration status
 export async function getMigrationStatus(jobId: string): Promise<MigrationResult> {
-  const response = await fetch(`${API_BASE_URL}/migration/${jobId}`);
+  const response = await fetch(`${FINAL_API_BASE}/migration/${jobId}`);
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to get migration status');
@@ -253,7 +253,7 @@ export async function getMigrationStatus(jobId: string): Promise<MigrationResult
 
 // Get migration logs
 export async function getMigrationLogs(jobId: string): Promise<{ job_id: string; logs: string[] }> {
-  const response = await fetch(`${API_BASE_URL}/migration/${jobId}/logs`);
+  const response = await fetch(`${FINAL_API_BASE}/migration/${jobId}/logs`);
   if (!response.ok) {
     throw new Error('Failed to get migration logs');
   }
@@ -262,7 +262,7 @@ export async function getMigrationLogs(jobId: string): Promise<{ job_id: string;
 
 // List all migrations
 export async function listMigrations(): Promise<MigrationResult[]> {
-  const response = await fetch(`${API_BASE_URL}/migrations`);
+  const response = await fetch(`${FINAL_API_BASE}/migrations`);
   if (!response.ok) {
     throw new Error('Failed to list migrations');
   }
@@ -271,7 +271,7 @@ export async function listMigrations(): Promise<MigrationResult[]> {
 
 // Get available recipes
 export async function getRecipes(): Promise<{ id: string; name: string; description: string }[]> {
-  const response = await fetch(`${API_BASE_URL}/openrewrite/recipes`);
+  const response = await fetch(`${FINAL_API_BASE}/openrewrite/recipes`);
   if (!response.ok) {
     throw new Error('Failed to fetch recipes');
   }
@@ -280,6 +280,6 @@ export async function getRecipes(): Promise<{ id: string; name: string; descript
 
 // Health check
 export async function healthCheck(): Promise<{ status: string; timestamp: string }> {
-  const response = await fetch(`${API_BASE_URL.replace('/api', '')}/health`);
+  const response = await fetch(`${FINAL_API_BASE.replace('/api', '')}/health`);
   return response.json();
 }

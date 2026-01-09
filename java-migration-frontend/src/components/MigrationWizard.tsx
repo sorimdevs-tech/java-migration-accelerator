@@ -9,6 +9,7 @@ import {
   startMigration,
   getMigrationStatus,
   getMigrationLogs,
+  API_BASE_URL,
 } from "../services/api";
 import type {
   RepoInfo,
@@ -901,7 +902,7 @@ export default function MigrationWizard() {
           style={{ ...styles.secondaryBtn, marginRight: 10 }}
           onClick={() => {
             if (migrationJob) {
-              const reportUrl = `http://localhost:8004/api/migration/${migrationJob.job_id}/report`;
+              const reportUrl = `${API_BASE_URL}/migration/${migrationJob.job_id}/report`;
               window.open(reportUrl, '_blank');
             }
           }}
@@ -912,7 +913,7 @@ export default function MigrationWizard() {
           style={{ ...styles.secondaryBtn, marginRight: 10 }}
           onClick={() => {
             if (migrationJob) {
-              const jmeterUrl = `http://localhost:8004/api/migration/${migrationJob.job_id}/jmeter`;
+              const jmeterUrl = `${API_BASE_URL}/migration/${migrationJob.job_id}/jmeter`;
               window.open(jmeterUrl, '_blank');
             }
           }}
