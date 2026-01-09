@@ -1,5 +1,6 @@
 /**
  * API Service for Java Migration Backend
+ * Updated: 2026-01-09 - Now using Netlify Functions for backend
  */
 
 const API_BASE_URL = (import.meta.env?.VITE_API_URL || '/.netlify/functions/api') + '/api';
