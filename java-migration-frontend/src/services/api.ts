@@ -4,6 +4,12 @@
 
 const API_BASE_URL = (import.meta.env?.VITE_API_URL || 'http://localhost:8001') + '/api';
 
+// For Netlify deployment, use Netlify Functions
+const isNetlify = window.location.hostname.includes('netlify.app');
+const NETLIFY_API_BASE = isNetlify ? '/.netlify/functions/api' : API_BASE_URL;
+
+const FINAL_API_BASE = isNetlify ? NETLIFY_API_BASE : API_BASE_URL;
+
 export interface RepoInfo {
   name: string;
   full_name: string;

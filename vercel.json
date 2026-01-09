@@ -8,7 +8,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://your-backend-url.onrender.com/api/$1"
+      "destination": "https://your-netlify-function-url.netlify.app/.netlify/functions/api/$1"
     },
     {
       "source": "/(.*)",
