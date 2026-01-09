@@ -24,17 +24,41 @@ interface JavaVersionOption {
 }
 
 const MIGRATION_STEPS = [
-  { id: 1, name: "Connect", icon: "🔑", description: "Select Project URL" },
-  { id: 2, name: "Files & Folders", icon: "📁", description: "Repository Structure" },
-  { id: 3, name: "Discovery", icon: "🔍", description: "Application Discovery" },
-  { id: 4, name: "Assessment", icon: "📊", description: "Application Assessment" },
-  { id: 5, name: "Strategy", icon: "📋", description: "Migration Strategy" },
-  { id: 6, name: "Planning", icon: "🎯", description: "Migration Planning" },
-  { id: 7, name: "Dependencies", icon: "📦", description: "Dependencies Analysis" },
-  { id: 8, name: "Build & Refactor", icon: "🔧", description: "Build Modernization & Refactor" },
-  { id: 9, name: "Code Migration", icon: "⚡", description: "Code Migration" },
-  { id: 10, name: "Testing", icon: "✅", description: "Testing & Validation" },
-  { id: 11, name: "Report", icon: "📄", description: "Migration Report" },
+  {
+    id: 1,
+    name: "Project Setup",
+    icon: "🔧",
+    description: "Connect & Configure",
+    subSteps: ["Repository Connection", "Project Selection", "Initial Analysis"]
+  },
+  {
+    id: 2,
+    name: "Assessment",
+    icon: "📊",
+    description: "Risk Analysis",
+    subSteps: ["Dependency Analysis", "Code Quality Check", "Migration Risk Assessment"]
+  },
+  {
+    id: 3,
+    name: "Migration Planning",
+    icon: "🎯",
+    description: "Target Configuration",
+    subSteps: ["Java Version Selection", "Framework Migration", "Conversion Types"]
+  },
+  {
+    id: 4,
+    name: "Migration Execution",
+    icon: "⚡",
+    description: "Run Migration",
+    subSteps: ["Code Transformation", "Testing & Validation", "Quality Assurance"]
+  },
+  {
+    id: 5,
+    name: "Results & Reports",
+    icon: "📄",
+    description: "Migration Results",
+    subSteps: ["View Results", "Download Reports", "Repository Links"]
+  },
 ];
 
 export default function MigrationWizard() {
@@ -923,25 +947,40 @@ export default function MigrationWizard() {
     </div>
   );
 
+  // Simplified 5-step rendering with sub-steps
+  const renderCurrentStep = () => {
+    const stepConfigs = {
+      1: { render: renderStep1, title: "Project Setup", subSteps: ["Repository Connection", "Project Selection", "Initial Analysis"] },
+      2: { render: renderStep2, title: "Assessment", subSteps: ["Dependency Analysis", "Code Quality Check", "Migration Risk Assessment"] },
+      3: { render: renderStep3, title: "Migration Planning", subSteps: ["Java Version Selection", "Framework Migration", "Conversion Types"] },
+      4: { render: renderMigrationProgress, title: "Migration Execution", subSteps: ["Code Transformation", "Testing & Validation", "Quality Assurance"] },
+      5: { render: renderStep5, title: "Results & Reports", subSteps: ["View Results", "Download Reports", "Repository Links"] }
+    };
+
+    return stepConfigs[step as keyof typeof stepConfigs] || { render: renderStep1, title: "Project Setup", subSteps: [] };
+  };
+
+  const currentStepConfig = renderCurrentStep();
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
         <div style={styles.logo}><span style={styles.logoIcon}>☕</span><span style={styles.logoText}>Java Migration Accelerator</span></div>
       </div>
-      <div style={styles.stepIndicatorContainer}>{renderStepIndicator()}</div>
+      <div style={styles.stepIndicatorContainer}>
+        {renderStepIndicator()}
+        <div style={styles.subStepContainer}>
+          <h4 style={styles.subStepTitle}>{currentStepConfig.title} - Sub-steps:</h4>
+          <div style={styles.subStepList}>
+            {currentStepConfig.subSteps.map((subStep, index) => (
+              <span key={index} style={styles.subStepItem}>{subStep}</span>
+            ))}
+          </div>
+        </div>
+      </div>
       <div style={styles.main}>
         {error && <div style={styles.errorBanner}><span>{error}</span><button style={styles.errorClose} onClick={() => setError("")}>×</button></div>}
-        {step === 1 && renderStep1()}
-        {step === 2 && renderStep2()}
-        {step === 3 && renderStep3()}
-        {step === 4 && renderStep4()}
-        {step === 5 && renderStep5()}
-        {step === 6 && renderStep6()}
-        {step === 7 && renderStep7()}
-        {step === 8 && renderStep8()}
-        {step === 9 && renderMigrationProgress()}
-        {step === 10 && renderMigrationProgress()}
-        {step === 11 && renderStep11()}
+        {currentStepConfig.render()}
       </div>
     </div>
   );
