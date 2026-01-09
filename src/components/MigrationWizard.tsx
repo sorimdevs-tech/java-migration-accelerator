@@ -13,6 +13,7 @@ import {
 import type {
   RepoInfo,
   RepoAnalysis,
+  RepoFile,
   MigrationResult,
   ConversionType,
 } from "../services/api";
