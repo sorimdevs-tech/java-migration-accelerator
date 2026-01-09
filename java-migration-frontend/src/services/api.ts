@@ -2,7 +2,7 @@
  * API Service for Java Migration Backend
  */
 
-const API_BASE_URL = (import.meta.env?.VITE_API_URL || 'http://localhost:8001') + '/api';
+const API_BASE_URL = (import.meta.env?.VITE_API_URL || 'https://java-migration-accelerator-production-97da.up.railway.app') + '/api';
 
 // For Netlify deployment, use Netlify Functions
 const isNetlify = window.location.hostname.includes('netlify.app');
@@ -279,6 +279,6 @@ export async function getRecipes(): Promise<{ id: string; name: string; descript
 
 // Health check
 export async function healthCheck(): Promise<{ status: string; timestamp: string }> {
-  const response = await fetch('http://localhost:8001/health');
+  const response = await fetch(`${API_BASE_URL.replace('/api', '')}/health`);
   return response.json();
 }
