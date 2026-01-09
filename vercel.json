@@ -1,19 +1,30 @@
 {
-  "name": "java-migration-accelerator-backend",
   "version": 2,
   "builds": [
     {
-      "src": "java-migration-backend/main.py",
-      "use": "@vercel/python"
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
     }
   ],
+  "functions": {
+    "api/**/*.py": {
+      "runtime": "python3.11"
+    }
+  },
   "routes": [
     {
+      "src": "/api/(.*)",
+      "dest": "/api/$1.py"
+    },
+    {
       "src": "/(.*)",
-      "dest": "java-migration-backend/main.py"
+      "dest": "/index.html"
     }
   ],
   "env": {
-    "PYTHONPATH": "java-migration-backend"
+    "PYTHONPATH": "."
   }
 }
