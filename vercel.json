@@ -1,18 +1,19 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "devCommand": "npm run dev",
-  "installCommand": "npm install",
-  "framework": "vite",
-  "rootDirectory": "java-migration-frontend",
-  "rewrites": [
+  "name": "java-migration-accelerator-backend",
+  "version": 2,
+  "builds": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://your-netlify-function-url.netlify.app/.netlify/functions/api/$1"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "src": "java-migration-backend/main.py",
+      "use": "@vercel/python"
     }
-  ]
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "java-migration-backend/main.py"
+    }
+  ],
+  "env": {
+    "PYTHONPATH": "java-migration-backend"
+  }
 }
