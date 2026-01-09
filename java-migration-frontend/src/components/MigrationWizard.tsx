@@ -901,7 +901,7 @@ export default function MigrationWizard() {
           style={{ ...styles.secondaryBtn, marginRight: 10 }}
           onClick={() => {
             if (migrationJob) {
-              const reportUrl = `http://localhost:8001/api/migration/${migrationJob.job_id}/report`;
+              const reportUrl = `http://localhost:8004/api/migration/${migrationJob.job_id}/report`;
               window.open(reportUrl, '_blank');
             }
           }}
@@ -912,7 +912,7 @@ export default function MigrationWizard() {
           style={{ ...styles.secondaryBtn, marginRight: 10 }}
           onClick={() => {
             if (migrationJob) {
-              const jmeterUrl = `http://localhost:8001/api/migration/${migrationJob.job_id}/jmeter`;
+              const jmeterUrl = `http://localhost:8004/api/migration/${migrationJob.job_id}/jmeter`;
               window.open(jmeterUrl, '_blank');
             }
           }}
