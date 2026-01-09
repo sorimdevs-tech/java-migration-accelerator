@@ -2,7 +2,7 @@
  * API Service for Java Migration Backend
  */
 
-const API_BASE_URL = (import.meta.env?.VITE_API_URL || 'https://java-migration-accelerator-production-97da.up.railway.app') + '/api';
+const API_BASE_URL = (import.meta.env?.VITE_API_URL || 'https://java-migration-backend.vercel.app') + '/api';
 
 // For Netlify deployment, use Netlify Functions
 const isNetlify = window.location.hostname.includes('netlify.app');
