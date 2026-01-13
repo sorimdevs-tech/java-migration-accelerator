@@ -1,0 +1,40 @@
+services:
+  # Backend API Service
+  - type: web
+    name: java-migration-backend
+    runtime: python
+    plan: free
+    rootDir: java-migration-backend/Java_Migration_Accelerator_backend/java-migration-backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITLAB_TOKEN
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SONARQUBE_TOKEN
+        sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+  # Frontend Static Site
+  - type: web
+    name: java-migration-frontend
+    runtime: static
+    plan: free
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          name: java-migration-backend
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
