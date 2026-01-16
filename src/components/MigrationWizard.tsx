@@ -122,6 +122,9 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null);
   const [showCodeChanges, setShowCodeChanges] = useState(true);
 
+  // Animation progress state - starts immediately when migration begins
+  const [animationProgress, setAnimationProgress] = useState(0);
+
   useEffect(() => {
     getJavaVersions().then((versions) => {
       setSourceVersions(versions.source_versions);
@@ -129,6 +132,33 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
     });
     getConversionTypes().then(setConversionTypes);
   }, []);
+
+  // Animation effect - starts immediately and progresses smoothly
+  useEffect(() => {
+    if (step === 5 && migrationJob) {
+      // Start animation immediately at 10%
+      setAnimationProgress(10);
+      
+      const animationInterval = setInterval(() => {
+        setAnimationProgress(prev => {
+          const actualProgress = migrationJob.progress_percent || 0;
+          // Smoothly catch up to actual progress, or animate forward if backend is slow
+          if (actualProgress > prev) {
+            return actualProgress;
+          }
+          // Animate forward slowly if backend hasn't updated yet (max 85% before completion)
+          if (prev < 85 && migrationJob.status !== "completed" && migrationJob.status !== "failed") {
+            return Math.min(prev + 2, 85);
+          }
+          return prev;
+        });
+      }, 500);
+      
+      return () => clearInterval(animationInterval);
+    } else if (step !== 5) {
+      setAnimationProgress(0);
+    }
+  }, [step, migrationJob?.progress_percent, migrationJob?.status]);
 
   useEffect(() => {
     if (step === 2 && selectedRepo && !repoAnalysis) {
@@ -693,7 +723,76 @@ public class UserService {
       </div>
 
       <div style={styles.field}>
-        <label style={styles.label}>Repository URL</label>
+        <label style={{ ...styles.label, display: "flex", alignItems: "center", gap: 8 }}>
+          Repository URL
+          {/* Info Button with Tooltip */}
+          <div style={{ position: "relative", display: "inline-block" }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 18,
+                height: 18,
+                borderRadius: "50%",
+                backgroundColor: "#e2e8f0",
+                color: "#64748b",
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: "help",
+                transition: "all 0.2s ease"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "#3b82f6";
+                e.currentTarget.style.color = "#fff";
+                const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
+                if (tooltip) tooltip.style.display = "block";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "#e2e8f0";
+                e.currentTarget.style.color = "#64748b";
+                const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
+                if (tooltip) tooltip.style.display = "none";
+              }}
+            >
+              i
+            </span>
+            {/* Tooltip */}
+            <div
+              style={{
+                display: "none",
+                position: "absolute",
+                top: 24,
+                left: 0,
+                backgroundColor: "#1e293b",
+                color: "#fff",
+                padding: "12px 16px",
+                borderRadius: 8,
+                fontSize: 12,
+                lineHeight: 1.6,
+                whiteSpace: "nowrap",
+                zIndex: 1000,
+                boxShadow: "0 4px 12px rgba(0,0,0,0.2)"
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: 6, color: "#94a3b8" }}>Supported formats:</div>
+              <div>• https://github.com/owner/repo</div>
+              <div>• github.com/owner/repo</div>
+              <div>• owner/repo</div>
+              {/* Arrow */}
+              <div style={{
+                position: "absolute",
+                top: -6,
+                left: 9,
+                width: 0,
+                height: 0,
+                borderLeft: "6px solid transparent",
+                borderRight: "6px solid transparent",
+                borderBottom: "6px solid #1e293b"
+              }} />
+            </div>
+          </div>
+        </label>
         <input
           type="text"
           style={{ ...styles.input, borderColor: urlValidation.valid ? '#22c55e' : repoUrl ? '#ef4444' : '#e2e8f0' }}
@@ -715,17 +814,6 @@ public class UserService {
             ✓ Valid repository URL
           </div>
         )}
-      </div>
-
-      <div style={{ background: "#f8fafc", padding: 16, borderRadius: 8, marginBottom: 20, border: "1px solid #e2e8f0" }}>
-        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 8 }}>
-          <strong>Supported formats:</strong>
-        </div>
-        <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.8 }}>
-          • https://github.com/owner/repo<br/>
-          • github.com/owner/repo<br/>
-          • owner/repo
-        </div>
       </div>
 
       <div style={styles.btnRow}>
@@ -1481,8 +1569,8 @@ public class UserService {
                           <div key={idx} style={styles.dependencyItem}>
                             <span style={{ flex: 2 }}>{dep.group_id}:{dep.artifact_id}</span>
                             <span style={{ ...styles.dependencyVersion, flex: 1, textAlign: "center" }}>{dep.current_version}</span>
-                            <span style={{ ...styles.detectedBadge, flex: 1, textAlign: "center", backgroundColor: dep.status === "analyzing" ? "#fef3c7" : dep.status === "upgraded" ? "#dcfce7" : "#e5e7eb", color: dep.status === "analyzing" ? "#92400e" : dep.status === "upgraded" ? "#166534" : "#6b7280" }}>
-                              {dep.status.replace("_", " ").toUpperCase()}
+                            <span style={{ ...styles.detectedBadge, flex: 1, textAlign: "center", backgroundColor: dep.status === "analyzing" ? "#dcfce7" : dep.status === "upgraded" ? "#dcfce7" : "#e5e7eb", color: dep.status === "analyzing" ? "#166534" : dep.status === "upgraded" ? "#166534" : "#6b7280" }}>
+                              {dep.status === "analyzing" ? "ANALYZED" : dep.status.replace("_", " ").toUpperCase()}
                             </span>
                           </div>
                         ))}
@@ -1769,8 +1857,8 @@ public class UserService {
                   <div key={idx} style={styles.dependencyItem}>
                     <span style={{ flex: 2 }}>{dep.group_id}:{dep.artifact_id}</span>
                     <span style={{ ...styles.dependencyVersion, flex: 1, textAlign: "center" }}>{dep.current_version}</span>
-                    <span style={{ ...styles.detectedBadge, flex: 1, textAlign: "center", backgroundColor: dep.status === "analyzing" ? "#fef3c7" : dep.status === "upgraded" ? "#dcfce7" : "#e5e7eb", color: dep.status === "analyzing" ? "#92400e" : dep.status === "upgraded" ? "#166534" : "#6b7280" }}>
-                      {dep.status.replace("_", " ").toUpperCase()}
+                    <span style={{ ...styles.detectedBadge, flex: 1, textAlign: "center", backgroundColor: dep.status === "analyzing" ? "#dcfce7" : dep.status === "upgraded" ? "#dcfce7" : "#e5e7eb", color: dep.status === "analyzing" ? "#166534" : dep.status === "upgraded" ? "#166534" : "#6b7280" }}>
+                      {dep.status === "analyzing" ? "ANALYZED" : dep.status.replace("_", " ").toUpperCase()}
                     </span>
                   </div>
                 ))}
@@ -2258,8 +2346,8 @@ public class UserService {
               <div key={idx} style={styles.dependencyItem}>
                 <span>{dep.group_id}:{dep.artifact_id}</span>
                 <span style={styles.dependencyVersion}>{dep.current_version}</span>
-                <span style={{ ...styles.detectedBadge, backgroundColor: dep.status === "analyzing" ? "#fef3c7" : dep.status === "upgraded" ? "#dcfce7" : "#e5e7eb", color: dep.status === "analyzing" ? "#92400e" : dep.status === "upgraded" ? "#166534" : "#6b7280" }}>
-                  {dep.status.replace("_", " ").toUpperCase()}
+                <span style={{ ...styles.detectedBadge, backgroundColor: dep.status === "analyzing" ? "#dcfce7" : dep.status === "upgraded" ? "#dcfce7" : "#e5e7eb", color: dep.status === "analyzing" ? "#166534" : dep.status === "upgraded" ? "#166534" : "#6b7280" }}>
+                  {dep.status === "analyzing" ? "ANALYZED" : dep.status.replace("_", " ").toUpperCase()}
                 </span>
               </div>
             ))}
@@ -2386,34 +2474,34 @@ public class UserService {
 
           {/* Animated Steps */}
           <div style={styles.animationSteps}>
-            <div style={{ ...styles.animationStep, opacity: (migrationJob?.progress_percent || 0) >= 10 ? 1 : 0.3 }}>
+            <div style={{ ...styles.animationStep, opacity: animationProgress >= 10 ? 1 : 0.3, transition: "opacity 0.3s ease" }}>
               <div style={styles.stepIconAnimated}>📂</div>
               <div style={styles.stepText}>Analyzing Source Code</div>
-              {(migrationJob?.progress_percent || 0) >= 10 && <div style={styles.checkMarkAnimated}>✓</div>}
+              {animationProgress >= 10 && <div style={styles.checkMarkAnimated}>✓</div>}
             </div>
 
-            <div style={{ ...styles.animationStep, opacity: (migrationJob?.progress_percent || 0) >= 30 ? 1 : 0.3 }}>
+            <div style={{ ...styles.animationStep, opacity: animationProgress >= 30 ? 1 : 0.3, transition: "opacity 0.3s ease" }}>
               <div style={styles.stepIconAnimated}>⚙️</div>
               <div style={styles.stepText}>Updating Dependencies</div>
-              {(migrationJob?.progress_percent || 0) >= 30 && <div style={styles.checkMarkAnimated}>✓</div>}
+              {animationProgress >= 30 && <div style={styles.checkMarkAnimated}>✓</div>}
             </div>
 
-            <div style={{ ...styles.animationStep, opacity: (migrationJob?.progress_percent || 0) >= 50 ? 1 : 0.3 }}>
+            <div style={{ ...styles.animationStep, opacity: animationProgress >= 50 ? 1 : 0.3, transition: "opacity 0.3s ease" }}>
               <div style={styles.stepIconAnimated}>🔧</div>
               <div style={styles.stepText}>Applying Code Transformations</div>
-              {(migrationJob?.progress_percent || 0) >= 50 && <div style={styles.checkMarkAnimated}>✓</div>}
+              {animationProgress >= 50 && <div style={styles.checkMarkAnimated}>✓</div>}
             </div>
 
-            <div style={{ ...styles.animationStep, opacity: (migrationJob?.progress_percent || 0) >= 70 ? 1 : 0.3 }}>
+            <div style={{ ...styles.animationStep, opacity: animationProgress >= 70 ? 1 : 0.3, transition: "opacity 0.3s ease" }}>
               <div style={styles.stepIconAnimated}>🧪</div>
               <div style={styles.stepText}>Running Tests & Quality Checks</div>
-              {(migrationJob?.progress_percent || 0) >= 70 && <div style={styles.checkMarkAnimated}>✓</div>}
+              {animationProgress >= 70 && <div style={styles.checkMarkAnimated}>✓</div>}
             </div>
 
-            <div style={{ ...styles.animationStep, opacity: (migrationJob?.progress_percent || 0) >= 90 ? 1 : 0.3 }}>
+            <div style={{ ...styles.animationStep, opacity: animationProgress >= 90 ? 1 : 0.3, transition: "opacity 0.3s ease" }}>
               <div style={styles.stepIconAnimated}>📊</div>
               <div style={styles.stepText}>Generating Migration Report</div>
-              {(migrationJob?.progress_percent || 0) >= 90 && <div style={styles.checkMarkAnimated}>✓</div>}
+              {animationProgress >= 90 && <div style={styles.checkMarkAnimated}>✓</div>}
             </div>
           </div>
 
@@ -2421,13 +2509,13 @@ public class UserService {
           <div style={styles.animatedProgressSection}>
             <div style={styles.animatedProgressHeader}>
               <span>Migration Progress</span>
-              <span>{migrationJob?.progress_percent || 0}%</span>
+              <span>{animationProgress}%</span>
             </div>
             <div style={styles.animatedProgressBar}>
               <div style={{
                 ...styles.animatedProgressFill,
-                width: `${migrationJob?.progress_percent || 0}%`,
-                background: `linear-gradient(90deg, #3b82f6 ${(migrationJob?.progress_percent || 0) - 10}%, #22c55e ${(migrationJob?.progress_percent || 0)}%)`
+                width: `${animationProgress}%`,
+                background: `linear-gradient(90deg, #3b82f6 ${animationProgress - 10}%, #22c55e ${animationProgress}%)`
               }} />
             </div>
           </div>

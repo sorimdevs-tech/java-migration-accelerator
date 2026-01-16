@@ -54,7 +54,6 @@ const TopBar: React.FC = () => (
   <header style={topBarStyles.header}>
     <div style={topBarStyles.brand}>
       <span style={{ fontSize: 22 }}>☕</span>
-      Java Migration Accelerator
     </div>
     <div style={topBarStyles.status}>
       <span style={topBarStyles.badge}>🔄 OpenRewrite Powered</span>

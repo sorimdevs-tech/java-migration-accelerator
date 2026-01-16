@@ -22,6 +22,7 @@ export default function Header({ showBackButton = false, onBackToHome }: HeaderP
       display: "flex",
       alignItems: "center",
       gap: 8,
+      cursor: "pointer",
     },
     logoText: {
       fontSize: 16,
@@ -31,7 +32,7 @@ export default function Header({ showBackButton = false, onBackToHome }: HeaderP
     },
     navLinks: {
       display: "flex",
-      gap: 24,
+      gap: 20,
       alignItems: "center",
     },
     navLink: {
@@ -45,19 +46,18 @@ export default function Header({ showBackButton = false, onBackToHome }: HeaderP
       alignItems: "center",
       gap: 6,
     },
-    profileButton: {
-      width: 36,
-      height: 36,
+    iconButton: {
+      width: 34,
+      height: 34,
       borderRadius: "50%",
-      backgroundColor: "#3b82f6",
-      color: "#fff",
-      border: "none",
+      backgroundColor: "transparent",
+      color: "#e2e8f0",
+      border: "1px solid #374151",
       cursor: "pointer",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      fontSize: 16,
-      fontWeight: 600,
+      fontSize: 14,
       transition: "all 0.3s ease",
     },
     backButton: {
@@ -75,9 +75,9 @@ export default function Header({ showBackButton = false, onBackToHome }: HeaderP
 
   return (
     <nav style={styles.navbar}>
-      {/* Logo Only */}
-      <div style={styles.logoContainer}>
-        <img src={apexLogo} alt="Logo" style={{ width: 36, height: 36, objectFit: 'contain' }} />
+      {/* Logo Only - No Text */}
+      <div style={styles.logoContainer} onClick={onBackToHome}>
+        <img src={apexLogo} alt="javaAPEX" style={{ width: 36, height: 36, objectFit: 'contain' }} />
         <p style={styles.logoText}>javaAPEX</p>
       </div>
 
@@ -89,7 +89,7 @@ export default function Header({ showBackButton = false, onBackToHome }: HeaderP
           onMouseLeave={(e) => (e.currentTarget.style.color = "#e2e8f0")}
           href="#"
         >
-          <span>📚</span> Documentation
+          Documentation
         </a>
         <a
           style={styles.navLink}
@@ -99,7 +99,7 @@ export default function Header({ showBackButton = false, onBackToHome }: HeaderP
           target="_blank"
           rel="noreferrer"
         >
-          <span>🐙</span> GitHub
+          GitHub
         </a>
         <a
           style={styles.navLink}
@@ -107,7 +107,7 @@ export default function Header({ showBackButton = false, onBackToHome }: HeaderP
           onMouseLeave={(e) => (e.currentTarget.style.color = "#e2e8f0")}
           href="#"
         >
-          <span>💖</span> Support Us
+          Support Us
         </a>
         
         {showBackButton && onBackToHome ? (
@@ -129,14 +129,16 @@ export default function Header({ showBackButton = false, onBackToHome }: HeaderP
         
         {/* Profile Icon */}
         <button
-          style={styles.profileButton}
+          style={styles.iconButton}
           onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = "#2563eb";
-            e.currentTarget.style.transform = "scale(1.05)";
+            e.currentTarget.style.backgroundColor = "#3b82f6";
+            e.currentTarget.style.borderColor = "#3b82f6";
+            e.currentTarget.style.color = "#fff";
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = "#3b82f6";
-            e.currentTarget.style.transform = "scale(1)";
+            e.currentTarget.style.backgroundColor = "transparent";
+            e.currentTarget.style.borderColor = "#374151";
+            e.currentTarget.style.color = "#e2e8f0";
           }}
           title="Profile"
         >
