@@ -11,7 +11,9 @@ import {
   startMigration,
   getMigrationStatus,
   getMigrationLogs,
+  // Import API_BASE_URL for dynamic URL construction
 } from "../services/api";
+import { API_BASE_URL } from "../services/api";
 import type {
   RepoInfo,
   RepoAnalysis,
@@ -3122,7 +3124,7 @@ public class UserService {
           style={{ ...styles.secondaryBtn, marginRight: 10 }}
           onClick={() => {
             if (migrationJob) {
-              const zipUrl = `http://localhost:8001/api/migration/${migrationJob.job_id}/download-zip`;
+              const zipUrl = `${API_BASE_URL}/migration/${migrationJob.job_id}/download-zip`;
               const link = document.createElement('a');
               link.href = zipUrl;
               link.download = `migrated-project-${migrationJob.job_id}.zip`;
@@ -3138,7 +3140,7 @@ public class UserService {
           style={{ ...styles.secondaryBtn, marginRight: 10 }}
           onClick={() => {
             if (migrationJob) {
-              const reportUrl = `http://localhost:8001/api/migration/${migrationJob.job_id}/report`;
+              const reportUrl = `${API_BASE_URL}/migration/${migrationJob.job_id}/report`;
               window.open(reportUrl, '_blank');
             }
           }}
