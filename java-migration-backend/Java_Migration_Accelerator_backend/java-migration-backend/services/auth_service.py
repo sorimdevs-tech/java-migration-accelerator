@@ -7,7 +7,7 @@ router = APIRouter()
 
 GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "Ov23livUCegqUQNlmOgt")
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "1c9570628d5ef5a79837d2eb27f648489d003ed3")
-REDIRECT_URI = os.environ.get("GITHUB_REDIRECT_URI", "http://localhost:5173/auth/callback")
+REDIRECT_URI = os.environ.get("GITHUB_REDIRECT_URI", "https://java-migration-accelerator-3.onrender.com/auth/callback")
 
 @router.get("/auth/github/login")
 def github_login():
