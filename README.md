@@ -51,7 +51,7 @@ npm install
 npm run dev
 ```
 
-Visit `http://localhost:5173` for the web interface and `http://localhost:8001` for API docs.
+Visit `https://java-migration-accelerator-3.onrender.com` for the web interface and `http://localhost:8001` for API docs.
 
 ## 🎯 Core Capabilities
 
