@@ -7,8 +7,7 @@
     "dev": "vite",
     "build": "npx vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "postinstall": "chmod -R 755 node_modules/.bin"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.11.2",

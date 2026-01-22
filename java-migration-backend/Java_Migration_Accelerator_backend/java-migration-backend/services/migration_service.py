@@ -14,60 +14,273 @@ class MigrationService:
     def __init__(self):
         self.openrewrite_cli = os.getenv("OPENREWRITE_CLI_PATH", "rewrite-cli.jar")
     
-    def get_available_recipes(self) -> List[Dict[str, Any]]:
-        """Get available OpenRewrite recipes for Java migration"""
-        return [
-            {
-                "id": "org.openrewrite.java.migrate.JavaVersion7to8",
-                "name": "Java 7 to 8",
-                "description": "Migrate Java 7 code to Java 8, including lambda expressions and stream API"
-            },
-            {
-                "id": "org.openrewrite.java.migrate.JavaVersion8to11",
-                "name": "Java 8 to 11",
-                "description": "Migrate Java 8 code to Java 11, including module system updates"
-            },
-            {
-                "id": "org.openrewrite.java.migrate.JavaVersion11to17",
-                "name": "Java 11 to 17",
-                "description": "Migrate Java 11 code to Java 17 with new language features"
-            },
-            {
-                "id": "org.openrewrite.java.migrate.JavaVersion17to21",
-                "name": "Java 17 to 21",
-                "description": "Migrate Java 17 code to Java 21 with virtual threads and pattern matching"
-            },
-            {
-                "id": "org.openrewrite.java.migrate.UpgradeToJava17",
-                "name": "Upgrade to Java 17 (Full)",
-                "description": "Complete migration to Java 17 LTS from any older version"
-            },
-            {
-                "id": "org.openrewrite.java.migrate.UpgradeToJava21",
-                "name": "Upgrade to Java 21 (Full)",
-                "description": "Complete migration to Java 21 LTS from any older version"
-            },
-            {
+    async def get_available_recipes(self, token: str, repo_url: str, owner: str, repo: str) -> List[Dict[str, Any]]:
+        """Get available OpenRewrite recipes for Java migration based on repository analysis"""
+        from services.github_service import GitHubService
+
+        # Analyze the repository to understand its current state
+        github_service = GitHubService()
+        analysis = await github_service.analyze_repository(token, owner, repo, repo_url)
+
+        recipes = []
+        detected_features = {}
+
+        # Extract key information from analysis
+        java_version = analysis.get("java_version", "8")
+        build_tool = analysis.get("build_tool", "unknown")
+        dependencies = analysis.get("dependencies", [])
+        business_issues = analysis.get("business_issues", [])
+        security_issues = analysis.get("security_issues", [])
+        performance_issues = analysis.get("performance_issues", [])
+
+        # Convert java_version to int for comparisons
+        try:
+            current_java_version = int(java_version)
+        except (ValueError, TypeError):
+            current_java_version = 8
+
+        # Analyze dependencies to detect frameworks
+        spring_boot_version = None
+        junit_version = None
+        javax_packages = []
+        jakarta_packages = []
+        log4j_detected = False
+        slf4j_detected = False
+
+        for dep in dependencies:
+            group_id = dep.get("group_id", "").lower()
+            artifact_id = dep.get("artifact_id", "").lower()
+
+            # Spring Boot detection
+            if "spring-boot" in artifact_id:
+                version = dep.get("current_version", "")
+                if version and version.startswith("2."):
+                    spring_boot_version = 2
+                elif version and version.startswith("3."):
+                    spring_boot_version = 3
+
+            # JUnit detection
+            if "junit" in artifact_id:
+                if "jupiter" in artifact_id:
+                    junit_version = 5
+                elif version and version.startswith("4."):
+                    junit_version = 4
+
+            # Javax vs Jakarta detection
+            if group_id == "javax":
+                javax_packages.append(f"{group_id}:{artifact_id}")
+
+            # Jakarta packages
+            if "jakarta" in group_id:
+                jakarta_packages.append(f"{group_id}:{artifact_id}")
+
+            # Logging framework detection
+            if "log4j" in artifact_id:
+                log4j_detected = True
+            if "slf4j" in artifact_id:
+                slf4j_detected = True
+
+        # Analyze source code for additional features
+        java_files = analysis.get("all_files", [])
+        spring_annotations = 0
+        junit_tests = 0
+        log4j_usage = 0
+
+        for file_info in java_files:
+            if file_info.get("name", "").endswith(".java"):
+                try:
+                    # Use GitHub API to get file content
+                    file_path = file_info.get("path", "")
+                    if file_path:
+                        file_content = await github_service.get_file_content(token, owner, repo, file_path)
+
+                        # Count Spring annotations
+                        spring_patterns = [r'@SpringBootApplication', r'@RestController', r'@Service', r'@Repository']
+                        for pattern in spring_patterns:
+                            spring_annotations += len(re.findall(pattern, file_content))
+
+                        # Count JUnit usage
+                        junit_patterns = [r'@Test', r'@Before', r'@After']
+                        for pattern in junit_patterns:
+                            junit_tests += len(re.findall(pattern, file_content))
+
+                        # Count Log4j usage
+                        if 'Logger.getLogger' in file_content or 'log4j' in file_content.lower():
+                            log4j_usage += 1
+
+                except Exception as e:
+                    print(f"Error analyzing file {file_path}: {e}")
+                    continue
+
+        # Generate recipes based on analysis
+
+        # Comprehensive Java Version Upgrade Recipe (from current version to latest)
+        if current_java_version < 21:
+            target_version = 21  # Latest LTS
+            upgrade_steps = []
+
+            if current_java_version < 8:
+                upgrade_steps.append("Java 7/6/5/1.4/1.3/1.2/1.1/1.0 → 8")
+            if current_java_version < 11:
+                upgrade_steps.append("Java 8 → 11")
+            if current_java_version < 17:
+                upgrade_steps.append("Java 11 → 17")
+            if current_java_version < 21:
+                upgrade_steps.append("Java 17 → 21")
+
+            recipes.append({
+                "id": "org.openrewrite.java.migrate.UpgradeToLatestJava",
+                "name": f"Upgrade Java {current_java_version} to 21 (Latest)",
+                "description": f"Complete migration from Java {current_java_version} to Java 21 LTS. Includes: {', '.join(upgrade_steps)}. Detected {len(java_files)} Java files.",
+                "priority": "critical",
+                "category": "java_version_upgrade",
+                "target_version": "21",
+                "current_version": str(current_java_version),
+                "upgrade_path": upgrade_steps,
+                "estimated_complexity": "high" if current_java_version <= 8 else "medium"
+            })
+        elif current_java_version == 21:
+            recipes.append({
+                "id": "org.openrewrite.java.migrate.MaintainLatestJava",
+                "name": "Already on Latest Java (21)",
+                "description": "Your project is already using Java 21 (latest LTS). Focus on dependency updates and code quality improvements.",
+                "priority": "low",
+                "category": "maintenance"
+            })
+
+        # Framework-specific recipes
+        if spring_boot_version == 2 and current_java_version >= 17:
+            recipes.append({
                 "id": "org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_0",
-                "name": "Spring Boot 3.0 Upgrade",
-                "description": "Migrate Spring Boot 2.x to 3.0"
-            },
-            {
+                "name": "Spring Boot 2.x to 3.0",
+                "description": f"Upgrade Spring Boot {spring_boot_version}.x to 3.0 (detected {spring_annotations} Spring annotations)",
+                "priority": "high",
+                "category": "framework"
+            })
+
+        # Dependency management recipes
+        if len(dependencies) > 0:
+            recipes.append({
                 "id": "org.openrewrite.java.dependencies.UpgradeDependencyVersion",
                 "name": "Upgrade Dependencies",
-                "description": "Upgrade dependency versions to latest compatible versions"
-            },
-            {
+                "description": f"Upgrade {len(dependencies)} dependencies to latest compatible versions",
+                "priority": "medium",
+                "category": "dependencies"
+            })
+
+        # JUnit migration
+        if junit_version == 4:
+            recipes.append({
+                "id": "org.openrewrite.java.testing.junit5.JUnit4to5Migration",
+                "name": "JUnit 4 to 5 Migration",
+                "description": f"Migrate JUnit {junit_version} to JUnit 5 (detected {junit_tests} test methods)",
+                "priority": "medium",
+                "category": "testing"
+            })
+
+        # Logging framework migration
+        if log4j_detected and not slf4j_detected:
+            recipes.append({
+                "id": "org.openrewrite.java.logging.slf4j.Log4jToSlf4j",
+                "name": "Log4j to SLF4J Migration",
+                "description": f"Migrate Log4j logging to SLF4J (detected {log4j_usage} files using Log4j)",
+                "priority": "low",
+                "category": "logging"
+            })
+
+        # Javax to Jakarta migration (for Java 17+)
+        if current_java_version >= 17 and len(javax_packages) > 0:
+            recipes.append({
+                "id": "org.openrewrite.java.migrate.jakarta.JavaxToJakarta",
+                "name": "Javax to Jakarta Migration",
+                "description": f"Migrate javax packages to jakarta (found {len(javax_packages)} javax dependencies)",
+                "priority": "high",
+                "category": "java_ee"
+            })
+
+        # Code quality and cleanup recipes
+        total_issues = len(business_issues) + len(security_issues) + len(performance_issues)
+        if total_issues > 0:
+            recipes.append({
                 "id": "org.openrewrite.java.cleanup.CommonStaticAnalysis",
                 "name": "Static Analysis Fixes",
-                "description": "Fix common static analysis issues"
-            },
-            {
+                "description": f"Fix {total_issues} code quality issues (business: {len(business_issues)}, security: {len(security_issues)}, performance: {len(performance_issues)})",
+                "priority": "medium",
+                "category": "code_quality"
+            })
+
+        # Business logic fixes
+        if len(business_issues) > 0:
+            recipes.append({
                 "id": "org.openrewrite.java.cleanup.UnnecessaryThrows",
-                "name": "Remove Unnecessary Throws",
-                "description": "Remove unnecessary throws declarations"
-            }
-        ]
+                "name": "Business Logic Improvements",
+                "description": f"Apply {len(business_issues)} business logic fixes and improvements",
+                "priority": "low",
+                "category": "business_logic"
+            })
+
+        # Security fixes
+        if len(security_issues) > 0:
+            recipes.append({
+                "id": "org.openrewrite.java.security.SecureByDefault",
+                "name": "Security Hardening",
+                "description": f"Apply {len(security_issues)} security fixes and improvements",
+                "priority": "high",
+                "category": "security"
+            })
+
+        # Performance optimizations
+        if len(performance_issues) > 0:
+            recipes.append({
+                "id": "org.openrewrite.java.performance.PerformanceOptimization",
+                "name": "Performance Optimizations",
+                "description": f"Apply {len(performance_issues)} performance optimizations",
+                "priority": "medium",
+                "category": "performance"
+            })
+
+        # Build tool specific recipes
+        if build_tool == "maven":
+            recipes.append({
+                "id": "org.openrewrite.java.build.MavenOptimization",
+                "name": "Maven Build Optimization",
+                "description": "Optimize Maven build configuration and dependencies",
+                "priority": "low",
+                "category": "build"
+            })
+        elif build_tool == "gradle":
+            recipes.append({
+                "id": "org.openrewrite.java.build.GradleOptimization",
+                "name": "Gradle Build Optimization",
+                "description": "Optimize Gradle build configuration and dependencies",
+                "priority": "low",
+                "category": "build"
+            })
+
+        # Sort recipes by priority
+        priority_order = {"high": 0, "medium": 1, "low": 2}
+        recipes.sort(key=lambda x: priority_order.get(x.get("priority", "medium"), 1))
+
+        # If no recipes were generated, provide basic fallback
+        if not recipes:
+            recipes = [
+                {
+                    "id": "org.openrewrite.java.migrate.UpgradeToJava17",
+                    "name": "Upgrade to Java 17 (Full)",
+                    "description": "Complete migration to Java 17 LTS from any older version",
+                    "priority": "high",
+                    "category": "java_version"
+                },
+                {
+                    "id": "org.openrewrite.java.cleanup.CommonStaticAnalysis",
+                    "name": "Static Analysis Fixes",
+                    "description": "Fix common static analysis issues",
+                    "priority": "medium",
+                    "category": "code_quality"
+                }
+            ]
+
+        return recipes
     
     def _get_migration_recipes(self, source_version: str, target_version: str) -> List[str]:
         """Get the appropriate recipes for migration path"""
@@ -389,9 +602,9 @@ class MigrationService:
         return endpoints
     
     async def run_migration(
-        self, 
-        project_path: str, 
-        source_version: str, 
+        self,
+        project_path: str,
+        source_version: str,
         target_version: str,
         fix_business_logic: bool = True
     ) -> Dict[str, Any]:
@@ -404,11 +617,30 @@ class MigrationService:
             "files_scanned": 0,
             "project_restructured": False
         }
-        
-        # Check if this is a standalone project (no pom.xml or build.gradle)
+
+        # Handle auto-detection of source version
+        if source_version == "auto" or source_version == "not_specified":
+            print(f"[DEBUG] Auto-detecting Java version from source code...")
+            detected_version = await self._auto_detect_java_version(project_path)
+            if detected_version and detected_version != "not_specified":
+                source_version = detected_version
+                print(f"[DEBUG] Auto-detected Java version: {source_version}")
+            else:
+                # Default to Java 8 if auto-detection fails or no version specified
+                source_version = "8"
+                print(f"[DEBUG] Auto-detection failed or no version specified, defaulting to Java 8")
+
+        # Convert versions to integers for validation
+        try:
+            source_int = int(source_version)
+            target_int = int(target_version)
+        except ValueError as e:
+            raise Exception(f"Invalid Java version format: source='{source_version}', target='{target_version}'. Expected integer values.")
+
+        # Check for this is a standalone project (no pom.xml or build.gradle)
         pom_path = os.path.join(project_path, "pom.xml")
         gradle_path = os.path.join(project_path, "build.gradle")
-        
+
         if not os.path.exists(pom_path) and not os.path.exists(gradle_path):
             # Convert standalone Java files to professional Maven project structure
             restructure_result = await self._convert_to_maven_project(project_path, target_version)
@@ -417,7 +649,7 @@ class MigrationService:
             result["changes"].extend(restructure_result.get("changes", []))
             result["project_restructured"] = True
             print(f"✓ Converted standalone project to Maven structure")
-        
+
         # Update pom.xml Java version (now it should exist)
         pom_path = os.path.join(project_path, "pom.xml")
         if os.path.exists(pom_path):
@@ -425,7 +657,7 @@ class MigrationService:
             if modified:
                 result["files_modified"] += 1
                 result["changes"].append("Updated pom.xml Java version")
-        
+
         # Get recipes for migration path
         recipes = self._get_migration_recipes(source_version, target_version)
         
@@ -466,7 +698,61 @@ class MigrationService:
             result["issues_fixed"] += business_fixes
         
         return result
-    
+
+    async def _auto_detect_java_version(self, project_path: str) -> str:
+        """Auto-detect Java version from project files"""
+        try:
+            # Look for build files first
+            pom_path = os.path.join(project_path, "pom.xml")
+            gradle_path = os.path.join(project_path, "build.gradle")
+
+            # Check Maven pom.xml
+            if os.path.exists(pom_path):
+                try:
+                    with open(pom_path, 'r', encoding='utf-8') as f:
+                        pom_content = f.read()
+
+                    # Check for maven.compiler.source
+                    match = re.search(r'<maven\.compiler\.source>(\d+)</maven\.compiler\.source>', pom_content)
+                    if match:
+                        return match.group(1)
+
+                    # Check for java.version property
+                    match = re.search(r'<java\.version>(\d+)</java\.version>', pom_content)
+                    if match:
+                        return match.group(1)
+
+                except Exception as e:
+                    print(f"Error reading pom.xml: {e}")
+
+            # Check Gradle build file
+            if os.path.exists(gradle_path):
+                try:
+                    with open(gradle_path, 'r', encoding='utf-8') as f:
+                        gradle_content = f.read()
+
+                    # Check for sourceCompatibility
+                    match = re.search(r"sourceCompatibility\s*=\s*['\"]?(\d+)['\"]?", gradle_content)
+                    if match:
+                        return match.group(1)
+
+                except Exception as e:
+                    print(f"Error reading build.gradle: {e}")
+
+            # If no build file or version not found, analyze source code
+            java_files = await self._scan_all_java_files(project_path)
+            if java_files:
+                detected_version = await self._detect_java_version_from_source(java_files, project_path)
+                if detected_version and detected_version != "8":
+                    return detected_version
+
+            # Default fallback
+            return "8"
+
+        except Exception as e:
+            print(f"Error in auto-detection: {e}")
+            return "8"
+
     async def _convert_to_maven_project(self, project_path: str, target_version: str) -> Dict[str, Any]:
         """Convert standalone Java files to a professional Maven project structure"""
         import shutil

@@ -115,6 +115,10 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   const [viewingFrameworkFile, setViewingFrameworkFile] = useState<{name: string; path: string; content: string} | null>(null);
   const [frameworkFileLoading, setFrameworkFileLoading] = useState(false);
   const [createStandardStructure, setCreateStandardStructure] = useState(true);
+  // Track if user selected a version in discovery
+  const [userSelectedVersion, setUserSelectedVersion] = useState<string | null>(null);
+  // Track if no version was detected/selected
+  const [sourceVersionStatus, setSourceVersionStatus] = useState<"detected" | "not_selected" | "unknown">("unknown");
 
   // Code diff viewer states for Result page
   const [codeChanges, setCodeChanges] = useState<{
@@ -1094,8 +1098,8 @@ public class UserService {
                           <div style={{ fontSize: 20, fontWeight: 700, color: "#92400e", marginBottom: 8 }}>
                             High Risk Migration Detected
                           </div>
-                          <div style={{ fontSize: 14, color: "#a16207", lineHeight: 1.7 }}>
-                            This project is missing critical configuration files and may require additional setup:
+                      <div style={{ fontSize: 14, color: "#a16207", lineHeight: 1.7 }}>
+                            This project may be missing Java version configuration and may require additional setup:
                           </div>
                         </div>
                       </div>
@@ -1174,8 +1178,10 @@ public class UserService {
                           <select
                             value={suggestedJavaVersion}
                             onChange={(e) => {
-                              setSuggestedJavaVersion(e.target.value);
-                              setSelectedSourceVersion(e.target.value);
+                            setSuggestedJavaVersion(e.target.value);
+                            setSelectedSourceVersion(e.target.value === "auto" ? "8" : e.target.value); // Default to 8 if auto-detect
+                            setUserSelectedVersion(e.target.value); // Track that user made a selection
+                            setSourceVersionStatus("detected");
                             }}
                             style={{
                               padding: "10px 14px",
@@ -1187,30 +1193,56 @@ public class UserService {
                               minWidth: 200
                             }}
                           >
+                            <option value="auto">🔍 Auto-detect from code (Recommended)</option>
                             <option value="7">Java 7 (Legacy)</option>
                             <option value="8">Java 8 (LTS)</option>
                             <option value="11">Java 11 (LTS)</option>
-                            <option value="17">Java 17 (LTS) - Recommended</option>
+                            <option value="17">Java 17 (LTS)</option>
                             <option value="21">Java 21 (LTS)</option>
                           </select>
                           <div style={{ fontSize: 11, color: "#a16207", marginTop: 6 }}>
-                            💡 If unsure, Java 8 is a safe default for legacy projects
+                            💡 Auto-detect analyzes your code to determine the correct Java version
                           </div>
                         </div>
                         
                         {/* Standard Structure Option */}
-                        <div style={{ marginBottom: 8 }}>
-                          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                            <input
-                              type="checkbox"
-                              checked={createStandardStructure}
-                              onChange={(e) => setCreateStandardStructure(e.target.checked)}
-                              style={{ width: 18, height: 18, accentColor: "#f59e0b" }}
-                            />
-                            <span style={{ fontSize: 13, color: "#78350f" }}>
-                              Create standard Maven structure (src/main/java, src/test/java)
-                            </span>
-                          </label>
+                        <div style={{ marginBottom: 16 }}>
+                          <div style={{ marginBottom: 8 }}>
+                            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                              <input
+                                type="radio"
+                                name="structureChoice"
+                                value="create"
+                                checked={createStandardStructure}
+                                onChange={() => setCreateStandardStructure(true)}
+                                style={{ width: 18, height: 18, accentColor: "#f59e0b" }}
+                              />
+                              <span style={{ fontSize: 13, color: "#78350f", fontWeight: 500 }}>
+                                Create standard Maven structure automatically
+                              </span>
+                            </label>
+                            <div style={{ fontSize: 11, color: "#92400e", marginLeft: 28, marginTop: 4 }}>
+                              Recommended for projects without existing structure
+                            </div>
+                          </div>
+                          <div>
+                            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                              <input
+                                type="radio"
+                                name="structureChoice"
+                                value="skip"
+                                checked={!createStandardStructure}
+                                onChange={() => setCreateStandardStructure(false)}
+                                style={{ width: 18, height: 18, accentColor: "#f59e0b" }}
+                              />
+                              <span style={{ fontSize: 13, color: "#78350f", fontWeight: 500 }}>
+                                Skip structure creation - migrate existing files only
+                              </span>
+                            </label>
+                            <div style={{ fontSize: 11, color: "#92400e", marginLeft: 28, marginTop: 4 }}>
+                              Use if your project already has proper structure
+                            </div>
+                          </div>
                         </div>
                       </div>
                       
@@ -2067,22 +2099,48 @@ public class UserService {
         </div>
       </div>
 
-      <div style={styles.row}>
-        <div style={styles.field}>
-          <label style={styles.label}>Source Java Version</label>
-          <select style={{ ...styles.select, backgroundColor: "#f9fafb", cursor: "not-allowed" }} value={selectedSourceVersion} disabled>
-            {sourceVersions.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
-          </select>
-          <p style={styles.helpText}>Source version is auto-detected from your project</p>
+        <div style={styles.row}>
+            <div style={styles.field}>
+              <label style={styles.label}>Source Java Version</label>
+              <div style={{
+                padding: "12px 14px",
+                fontSize: 14,
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                backgroundColor: "#f9fafb",
+                color: userSelectedVersion ? "#1e293b" : "#6b7280",
+                fontWeight: userSelectedVersion ? 600 : 500
+              }}>
+                {userSelectedVersion
+                  ? `Java ${selectedSourceVersion}`
+                  : (repoAnalysis?.java_version_detected_from_build === false ? "Source don't have a java version" : "Source version not detected")
+                }
+              </div>
+              <p style={styles.helpText}>
+                {userSelectedVersion
+                  ? "Source version selected in discovery"
+                  : (repoAnalysis?.java_version_detected_from_build === false
+                      ? "No Java version specified in build files - migration will analyze source code to detect version"
+                      : "No version selected in discovery - migration will start from Java 1")
+                }
+              </p>
+            </div>
+          <div style={styles.field}>
+            <label style={styles.label}>Target Java Version</label>
+            <select style={styles.select} value={selectedTargetVersion} onChange={(e) => setSelectedTargetVersion(e.target.value)}>
+              {userSelectedVersion
+                ? targetVersions.filter(v => parseInt(v.value) > parseInt(selectedSourceVersion)).map((v) => <option key={v.value} value={v.value}>{v.label}</option>)
+                : targetVersions.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)
+              }
+            </select>
+            <p style={styles.helpText}>
+              {userSelectedVersion
+                ? "Only versions newer than source are available"
+                : "All target versions available - no source version constraint"
+              }
+            </p>
+          </div>
         </div>
-        <div style={styles.field}>
-          <label style={styles.label}>Target Java Version</label>
-          <select style={styles.select} value={selectedTargetVersion} onChange={(e) => setSelectedTargetVersion(e.target.value)}>
-            {targetVersions.filter(v => parseInt(v.value) > parseInt(selectedSourceVersion)).map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
-          </select>
-          <p style={styles.helpText}>Only versions newer than source are available</p>
-        </div>
-      </div>
 
       <div style={styles.field}>
         <label style={styles.label}>Target Repository Name</label>

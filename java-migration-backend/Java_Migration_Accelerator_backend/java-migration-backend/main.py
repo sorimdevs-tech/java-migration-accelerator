@@ -14,6 +14,10 @@ import os
 import re
 from datetime import datetime, timezone
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 
 from services.github_service import GitHubService
 from services.gitlab_service import GitLabService
