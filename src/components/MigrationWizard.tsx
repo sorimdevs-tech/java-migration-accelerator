@@ -2085,19 +2085,136 @@ public class UserService {
       <div style={styles.sectionTitle}>📋 Migration Strategy</div>
       <div style={styles.field}>
         <label style={styles.label}>Migration Approach</label>
-        <div style={styles.radioGroup}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
           {[
-            { value: "in-place", label: "In-place Migration", desc: "Modify existing codebase directly" },
-            { value: "branch", label: "Branch-based Migration", desc: "Safe parallel track with new branch" },
-            { value: "fork", label: "Fork & Migrate", desc: "Create new repository with migrated code" },
+            {
+              value: "in-place",
+              label: "In-place Migration",
+              desc: "Modify existing codebase directly",
+              tooltip: "Directly modifies your existing repository. Fastest option but creates a new commit history. Ideal for projects where you want to maintain the same repository URL and can handle potential rollback challenges.",
+              icon: "⚡",
+              color: "#3b82f6"
+            },
+            {
+              value: "branch",
+              label: "Branch-based Migration",
+              desc: "Safe parallel track with new branch",
+              tooltip: "Creates a new branch in your existing repository. Safe option that preserves your main branch. Allows for gradual rollout and easy rollback. Best for teams that want to test migrations before merging.",
+              icon: "🌿",
+              color: "#22c55e"
+            },
+            {
+              value: "fork",
+              label: "Fork & Migrate",
+              desc: "Create new repository with migrated code",
+              tooltip: "Creates an entirely new repository with the migrated code. Most conservative approach. Perfect for major version upgrades or when you want to maintain separate repositories for different Java versions.",
+              icon: "🍴",
+              color: "#f59e0b"
+            },
           ].map((opt) => (
-            <label key={opt.value} style={styles.radioLabel}>
-              <input type="radio" name="approach" value={opt.value} checked={migrationApproach === opt.value} onChange={(e) => setMigrationApproach(e.target.value)} style={styles.radio} />
-              <div>
-                <div style={{ fontWeight: 500 }}>{opt.label}</div>
-                <div style={{ fontSize: 12, color: "#6b7280" }}>{opt.desc}</div>
+            <div key={opt.value} style={{ position: "relative" }}>
+              <div
+                onClick={() => setMigrationApproach(opt.value)}
+                style={{
+                  padding: 20,
+                  borderRadius: 12,
+                  border: `2px solid ${migrationApproach === opt.value ? opt.color : "#e2e8f0"}`,
+                  backgroundColor: migrationApproach === opt.value ? `${opt.color}08` : "#fff",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  boxShadow: migrationApproach === opt.value ? `0 4px 12px ${opt.color}20` : "0 2px 4px rgba(0,0,0,0.05)",
+                  position: "relative"
+                }}
+                onMouseEnter={(e) => {
+                  if (migrationApproach !== opt.value) {
+                    e.currentTarget.style.borderColor = opt.color;
+                    e.currentTarget.style.boxShadow = `0 4px 12px ${opt.color}15`;
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (migrationApproach !== opt.value) {
+                    e.currentTarget.style.borderColor = "#e2e8f0";
+                    e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.05)";
+                  }
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                  <span style={{ fontSize: 24 }}>{opt.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b", marginBottom: 4 }}>{opt.label}</div>
+                    <div style={{ fontSize: 13, color: "#64748b" }}>{opt.desc}</div>
+                  </div>
+                  {migrationApproach === opt.value && (
+                    <div style={{ color: opt.color, fontSize: 18, fontWeight: 700 }}>✓</div>
+                  )}
+                </div>
+
+                {/* Info button for tooltip */}
+                <div style={{ position: "absolute", top: 12, right: 12 }}>
+                  <div
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: "50%",
+                      backgroundColor: "#e2e8f0",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "#64748b",
+                      cursor: "help"
+                    }}
+                    onMouseEnter={(e) => {
+                      const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
+                      if (tooltip) tooltip.style.display = "block";
+                    }}
+                    onMouseLeave={(e) => {
+                      const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
+                      if (tooltip) tooltip.style.display = "none";
+                    }}
+                  >
+                    i
+                  </div>
+
+                  {/* Tooltip */}
+                  <div
+                    style={{
+                      display: "none",
+                      position: "absolute",
+                      top: 28,
+                      right: 0,
+                      width: 280,
+                      backgroundColor: "#1e293b",
+                      color: "#f1f5f9",
+                      padding: "12px 16px",
+                      borderRadius: 8,
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                      zIndex: 1000,
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                      whiteSpace: "normal"
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: 8, color: "#94a3b8" }}>
+                      {opt.label} Details
+                    </div>
+                    <div>{opt.tooltip}</div>
+                    {/* Arrow */}
+                    <div style={{
+                      position: "absolute",
+                      top: -6,
+                      right: 16,
+                      width: 0,
+                      height: 0,
+                      borderLeft: "6px solid transparent",
+                      borderRight: "6px solid transparent",
+                      borderBottom: "6px solid #1e293b"
+                    }} />
+                  </div>
+                </div>
               </div>
-            </label>
+            </div>
           ))}
         </div>
       </div>
@@ -2183,16 +2300,106 @@ public class UserService {
 
       {/* Show what we plan to modernize */}
       <div style={styles.sectionTitle}>🎯 Migration Configuration</div>
-      <div style={styles.infoBox}>
-        <strong>What we'll modernize:</strong>
-        <ul style={{ margin: "8px 0 0 20px", padding: 0 }}>
-          <li>✅ Java version upgrade: {selectedSourceVersion} → {selectedTargetVersion}</li>
-          <li>✅ Code refactoring and optimization</li>
-          <li>✅ Dependency updates and compatibility</li>
-          <li>✅ Business logic improvements</li>
-          <li>✅ Test execution and validation</li>
-          <li>✅ Code quality analysis</li>
-        </ul>
+
+      {/* What we'll modernize - Card Design */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b", marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+          ✨ What we'll modernize
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+          {[
+            {
+              icon: "☕",
+              title: "Java Version Upgrade",
+              desc: `From Java ${selectedSourceVersion} to Java ${selectedTargetVersion}`,
+              color: "#2563eb"
+            },
+            {
+              icon: "🔧",
+              title: "Code Refactoring",
+              desc: "Modernize code patterns and best practices",
+              color: "#059669"
+            },
+            {
+              icon: "📦",
+              title: "Dependencies",
+              desc: "Update and ensure compatibility",
+              color: "#7c3aed"
+            },
+            {
+              icon: "🧠",
+              title: "Business Logic",
+              desc: "Improve performance and reliability",
+              color: "#dc2626"
+            },
+            {
+              icon: "🧪",
+              title: "Testing",
+              desc: "Execute and validate test suites",
+              color: "#ea580c"
+            },
+            {
+              icon: "🔍",
+              title: "Code Quality",
+              desc: "Analysis and improvement",
+              color: "#0891b2"
+            }
+          ].map((item, idx) => (
+            <div
+              key={idx}
+              style={{
+                padding: 20,
+                backgroundColor: "#fff",
+                border: "1px solid #e2e8f0",
+                borderRadius: 12,
+                boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+                transition: "all 0.2s ease",
+                cursor: "default"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
+                <div style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 12,
+                  backgroundColor: `${item.color}10`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 20
+                }}>
+                  {item.icon}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b", marginBottom: 4 }}>
+                    {item.title}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.4 }}>
+                    {item.desc}
+                  </div>
+                </div>
+              </div>
+              <div style={{
+                width: "100%",
+                height: 4,
+                backgroundColor: `${item.color}20`,
+                borderRadius: 2,
+                position: "relative",
+                overflow: "hidden"
+              }}>
+                <div style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  backgroundColor: item.color,
+                  borderRadius: 2
+                }} />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div style={styles.field}>
@@ -2215,40 +2422,281 @@ public class UserService {
         )}
       </div>
 
-      <div style={styles.warningBox}>
-        <div style={styles.warningTitle}>⚠️ Common Issues to Watch</div>
-        <ul style={styles.warningList}>
-          <li><strong>javax.xml.bind</strong> - Missing in Java 11+</li>
-          <li><strong>Illegal reflective access</strong> - Warnings become errors</li>
-          <li><strong>Internal JDK APIs</strong> - sun.misc.* blocked</li>
-          <li><strong>Module system</strong> - JPMS compatibility</li>
-        </ul>
+      {/* Common Issues to Watch - Card Design */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b", marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+          ⚠️ Common Issues to Watch
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
+          {[
+            {
+              icon: "📋",
+              title: "javax.xml.bind",
+              desc: "Missing in Java 11+ - requires explicit dependency",
+              severity: "high",
+              version: "Java 11+"
+            },
+            {
+              icon: "🚫",
+              title: "Illegal Reflective Access",
+              desc: "Warnings become errors in newer Java versions",
+              severity: "medium",
+              version: "Java 9+"
+            },
+            {
+              icon: "🔒",
+              title: "Internal JDK APIs",
+              desc: "sun.misc.* packages are blocked or removed",
+              severity: "high",
+              version: "Java 11+"
+            },
+            {
+              icon: "🧩",
+              title: "Module System (JPMS)",
+              desc: "Java Platform Module System compatibility",
+              severity: "medium",
+              version: "Java 9+"
+            }
+          ].map((issue, idx) => (
+            <div
+              key={idx}
+              style={{
+                padding: 20,
+                backgroundColor: "#fff",
+                border: `1px solid ${issue.severity === 'high' ? '#fca5a5' : '#fcd34d'}`,
+                borderRadius: 12,
+                boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+                transition: "all 0.2s ease",
+                cursor: "default"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
+                <div style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 12,
+                  backgroundColor: issue.severity === 'high' ? '#fef2f2' : '#fefce8',
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 20
+                }}>
+                  {issue.icon}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b" }}>
+                      {issue.title}
+                    </div>
+                    <span style={{
+                      fontSize: 10,
+                      padding: "3px 8px",
+                      borderRadius: 8,
+                      backgroundColor: issue.severity === 'high' ? '#dc2626' : '#d97706',
+                      color: "#fff",
+                      fontWeight: 600,
+                      textTransform: "uppercase"
+                    }}>
+                      {issue.severity}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.4 }}>
+                    {issue.desc}
+                  </div>
+                </div>
+              </div>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                fontSize: 12,
+                color: "#94a3b8"
+              }}>
+                <span>Affects: {issue.version}</span>
+                <span style={{ color: issue.severity === 'high' ? '#dc2626' : '#d97706', fontWeight: 600 }}>
+                  {issue.severity === 'high' ? 'Critical' : 'Warning'}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div style={styles.field}>
         <label style={styles.label}>Migration Options</label>
-        <div style={styles.optionsGrid}>
-          <label style={styles.optionItem}>
-            <input type="checkbox" checked={runTests} onChange={(e) => setRunTests(e.target.checked)} style={styles.checkbox} />
-            <div>
-              <div style={{ fontWeight: 500 }}>Run Tests</div>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>Execute test suite after migration</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
+          {[
+            {
+              key: "runTests",
+              checked: runTests,
+              onChange: (checked: boolean) => setRunTests(checked),
+              title: "Run Test Suite",
+              desc: "Execute automated tests after migration",
+              tooltip: "Runs the project's test suite to ensure all functionality works correctly after migration. Includes unit tests, integration tests, and any configured test frameworks. Highly recommended to verify migration success.",
+              icon: "🧪",
+              color: "#22c55e",
+              recommended: true
+            },
+            {
+              key: "runSonar",
+              checked: runSonar,
+              onChange: (checked: boolean) => setRunSonar(checked),
+              title: "SonarQube Analysis",
+              desc: "Run code quality and security analysis",
+              tooltip: "Performs comprehensive code quality analysis using SonarQube. Checks for bugs, vulnerabilities, code smells, test coverage, and maintainability metrics. Provides detailed quality gate status.",
+              icon: "🔍",
+              color: "#f59e0b",
+              recommended: false
+            },
+            {
+              key: "fixBusinessLogic",
+              checked: fixBusinessLogic,
+              onChange: (checked: boolean) => setFixBusinessLogic(checked),
+              title: "Fix Business Logic Issues",
+              desc: "Automatically improve code quality and patterns",
+              tooltip: "Applies automated code improvements including null safety, performance optimizations, modern API usage, and best practice implementations. Enhances code maintainability and reduces technical debt.",
+              icon: "🛠️",
+              color: "#3b82f6",
+              recommended: true
+            }
+          ].map((option) => (
+            <div key={option.key} style={{ position: "relative" }}>
+              <div
+                onClick={() => option.onChange(!option.checked)}
+                style={{
+                  padding: 20,
+                  borderRadius: 12,
+                  border: `2px solid ${option.checked ? option.color : "#e2e8f0"}`,
+                  backgroundColor: option.checked ? `${option.color}08` : "#fff",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  boxShadow: option.checked ? `0 4px 12px ${option.color}20` : "0 2px 4px rgba(0,0,0,0.05)",
+                  position: "relative"
+                }}
+                onMouseEnter={(e) => {
+                  if (!option.checked) {
+                    e.currentTarget.style.borderColor = option.color;
+                    e.currentTarget.style.boxShadow = `0 4px 12px ${option.color}15`;
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!option.checked) {
+                    e.currentTarget.style.borderColor = "#e2e8f0";
+                    e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.05)";
+                  }
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
+                  <span style={{ fontSize: 24 }}>{option.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 16, fontWeight: 600, color: "#1e293b" }}>{option.title}</span>
+                      {option.recommended && (
+                        <span style={{
+                          fontSize: 10,
+                          padding: "2px 6px",
+                          backgroundColor: "#dcfce7",
+                          color: "#166534",
+                          borderRadius: 8,
+                          fontWeight: 600,
+                          textTransform: "uppercase"
+                        }}>
+                          Recommended
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 13, color: "#64748b" }}>{option.desc}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {option.checked && (
+                      <div style={{ color: option.color, fontSize: 18, fontWeight: 700 }}>✓</div>
+                    )}
+                    <input
+                      type="checkbox"
+                      checked={option.checked}
+                      onChange={(e) => option.onChange(e.target.checked)}
+                      style={{
+                        width: 18,
+                        height: 18,
+                        accentColor: option.color,
+                        cursor: "pointer"
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Info button for tooltip */}
+                <div style={{ position: "absolute", top: 12, right: 12 }}>
+                  <div
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: "50%",
+                      backgroundColor: "#e2e8f0",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "#64748b",
+                      cursor: "help"
+                    }}
+                    onMouseEnter={(e) => {
+                      const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
+                      if (tooltip) tooltip.style.display = "block";
+                    }}
+                    onMouseLeave={(e) => {
+                      const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
+                      if (tooltip) tooltip.style.display = "none";
+                    }}
+                  >
+                    i
+                  </div>
+
+                  {/* Tooltip */}
+                  <div
+                    style={{
+                      display: "none",
+                      position: "absolute",
+                      top: 28,
+                      right: 0,
+                      width: 320,
+                      backgroundColor: "#1e293b",
+                      color: "#f1f5f9",
+                      padding: "14px 18px",
+                      borderRadius: 10,
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                      zIndex: 1000,
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                      whiteSpace: "normal"
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: 10, color: "#94a3b8", fontSize: 13 }}>
+                      {option.title} Details
+                    </div>
+                    <div style={{ marginBottom: 8 }}>{option.tooltip}</div>
+                    {option.recommended && (
+                      <div style={{ fontSize: 11, color: "#22c55e", fontWeight: 600, marginTop: 6 }}>
+                        💡 Recommended for most migrations
+                      </div>
+                    )}
+                    {/* Arrow */}
+                    <div style={{
+                      position: "absolute",
+                      top: -6,
+                      right: 20,
+                      width: 0,
+                      height: 0,
+                      borderLeft: "6px solid transparent",
+                      borderRight: "6px solid transparent",
+                      borderBottom: "6px solid #1e293b"
+                    }} />
+                  </div>
+                </div>
+              </div>
             </div>
-          </label>
-          <label style={styles.optionItem}>
-            <input type="checkbox" checked={runSonar} onChange={(e) => setRunSonar(e.target.checked)} style={styles.checkbox} />
-            <div>
-              <div style={{ fontWeight: 500 }}>SonarQube Analysis</div>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>Run code quality analysis</div>
-            </div>
-          </label>
-          <label style={styles.optionItem}>
-            <input type="checkbox" checked={fixBusinessLogic} onChange={(e) => setFixBusinessLogic(e.target.checked)} style={styles.checkbox} />
-            <div>
-              <div style={{ fontWeight: 500 }}>Fix Business Logic Issues</div>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>Automatically improve code quality and fix common issues</div>
-            </div>
-          </label>
+          ))}
         </div>
       </div>
 
@@ -2384,19 +2832,136 @@ public class UserService {
       </div>
       <div style={styles.field}>
         <label style={styles.label}>Migration Approach</label>
-        <div style={styles.radioGroup}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
           {[
-            { value: "in-place", label: "In-place Migration", desc: "Modify existing codebase directly" },
-            { value: "branch", label: "Branch-based Migration", desc: "Safe parallel track with new branch" },
-            { value: "fork", label: "Fork & Migrate", desc: "Create new repository with migrated code" },
+            {
+              value: "in-place",
+              label: "In-place Migration",
+              desc: "Modify existing codebase directly",
+              tooltip: "Directly modifies your existing repository. Fastest option but creates a new commit history. Ideal for projects where you want to maintain the same repository URL and can handle potential rollback challenges.",
+              icon: "⚡",
+              color: "#3b82f6"
+            },
+            {
+              value: "branch",
+              label: "Branch-based Migration",
+              desc: "Safe parallel track with new branch",
+              tooltip: "Creates a new branch in your existing repository. Safe option that preserves your main branch. Allows for gradual rollout and easy rollback. Best for teams that want to test migrations before merging.",
+              icon: "🌿",
+              color: "#22c55e"
+            },
+            {
+              value: "fork",
+              label: "Fork & Migrate",
+              desc: "Create new repository with migrated code",
+              tooltip: "Creates an entirely new repository with the migrated code. Most conservative approach. Perfect for major version upgrades or when you want to maintain separate repositories for different Java versions.",
+              icon: "🍴",
+              color: "#f59e0b"
+            },
           ].map((opt) => (
-            <label key={opt.value} style={styles.radioLabel}>
-              <input type="radio" name="approach" value={opt.value} checked={migrationApproach === opt.value} onChange={(e) => setMigrationApproach(e.target.value)} style={styles.radio} />
-              <div>
-                <div style={{ fontWeight: 500 }}>{opt.label}</div>
-                <div style={{ fontSize: 12, color: "#6b7280" }}>{opt.desc}</div>
+            <div key={opt.value} style={{ position: "relative" }}>
+              <div
+                onClick={() => setMigrationApproach(opt.value)}
+                style={{
+                  padding: 20,
+                  borderRadius: 12,
+                  border: `2px solid ${migrationApproach === opt.value ? opt.color : "#e2e8f0"}`,
+                  backgroundColor: migrationApproach === opt.value ? `${opt.color}08` : "#fff",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  boxShadow: migrationApproach === opt.value ? `0 4px 12px ${opt.color}20` : "0 2px 4px rgba(0,0,0,0.05)",
+                  position: "relative"
+                }}
+                onMouseEnter={(e) => {
+                  if (migrationApproach !== opt.value) {
+                    e.currentTarget.style.borderColor = opt.color;
+                    e.currentTarget.style.boxShadow = `0 4px 12px ${opt.color}15`;
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (migrationApproach !== opt.value) {
+                    e.currentTarget.style.borderColor = "#e2e8f0";
+                    e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.05)";
+                  }
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                  <span style={{ fontSize: 24 }}>{opt.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b", marginBottom: 4 }}>{opt.label}</div>
+                    <div style={{ fontSize: 13, color: "#64748b" }}>{opt.desc}</div>
+                  </div>
+                  {migrationApproach === opt.value && (
+                    <div style={{ color: opt.color, fontSize: 18, fontWeight: 700 }}>✓</div>
+                  )}
+                </div>
+
+                {/* Info button for tooltip */}
+                <div style={{ position: "absolute", top: 12, right: 12 }}>
+                  <div
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: "50%",
+                      backgroundColor: "#e2e8f0",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "#64748b",
+                      cursor: "help"
+                    }}
+                    onMouseEnter={(e) => {
+                      const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
+                      if (tooltip) tooltip.style.display = "block";
+                    }}
+                    onMouseLeave={(e) => {
+                      const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
+                      if (tooltip) tooltip.style.display = "none";
+                    }}
+                  >
+                    i
+                  </div>
+
+                  {/* Tooltip */}
+                  <div
+                    style={{
+                      display: "none",
+                      position: "absolute",
+                      top: 28,
+                      right: 0,
+                      width: 280,
+                      backgroundColor: "#1e293b",
+                      color: "#f1f5f9",
+                      padding: "12px 16px",
+                      borderRadius: 8,
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                      zIndex: 1000,
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                      whiteSpace: "normal"
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: 8, color: "#94a3b8" }}>
+                      {opt.label} Details
+                    </div>
+                    <div>{opt.tooltip}</div>
+                    {/* Arrow */}
+                    <div style={{
+                      position: "absolute",
+                      top: -6,
+                      right: 16,
+                      width: 0,
+                      height: 0,
+                      borderLeft: "6px solid transparent",
+                      borderRight: "6px solid transparent",
+                      borderBottom: "6px solid #1e293b"
+                    }} />
+                  </div>
+                </div>
               </div>
-            </label>
+            </div>
           ))}
         </div>
       </div>
