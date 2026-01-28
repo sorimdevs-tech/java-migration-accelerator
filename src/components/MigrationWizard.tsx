@@ -162,7 +162,7 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
     getConversionTypes().then(setConversionTypes);
   }, []);
 
-  // Fetch FOSSA results for the migration job ONLY when runFossa is checked
+  // Fetch FOSSA results for the migration job when the user requests it
   useEffect(() => {
     if (migrationJob?.job_id && runFossa) {
       let cancelled = false;
@@ -198,7 +198,7 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
 
       return () => { cancelled = true; };
     }
-  }, [runFossa, migrationJob?.job_id, migrationJob?.fossa_policy_status, migrationJob?.fossa_total_dependencies]);
+  }, [runFossa, migrationJob?.job_id]);
 
   // Animation effect - starts immediately and progresses smoothly
   useEffect(() => {
@@ -1163,7 +1163,6 @@ public class UserService {
                       }
                     }}
                   >
-                    {fossaLoading ? 'Running FOSSA...' : 'Run FOSSA Scan Now'}
                   </button>
                 </div>
               )}
@@ -3426,7 +3425,16 @@ public class UserService {
             </div>
           </label>
           <label style={styles.optionItem}>
-            <input type="checkbox" checked={runSonar} onChange={(e) => setRunSonar(e.target.checked)} style={styles.checkbox} />
+            <input
+              type="checkbox"
+              checked={runSonar}
+              onChange={(e) => {
+                const v = e.target.checked;
+                setRunSonar(v);
+                if (v) setRunFossa(false);
+              }}
+              style={styles.checkbox}
+            />
             <div>
               <div style={{ fontWeight: 500, fontSize: 16 }}>SonarQube Analysis</div>
               <div style={{ fontSize: 12, color: "#6b7280" }}>Run code quality analysis</div>
@@ -3436,7 +3444,11 @@ public class UserService {
   <input
     type="checkbox"
     checked={runFossa}
-    onChange={(e) => setRunFossa(e.target.checked)}
+    onChange={(e) => {
+      const v = e.target.checked;
+      setRunFossa(v);
+      if (v) setRunSonar(false);
+    }}
     style={styles.checkbox}
   />
   <div>
@@ -4624,8 +4636,8 @@ public class UserService {
           </div>
          )}
 
-            {/* FOSSA License & Dependency Report */}
-            {((runFossa || migrationJob?.fossa_policy_status != null || migrationJob?.fossa_total_dependencies != null || fossaResult) && (migrationJob || fossaResult)) && (<div style={styles.reportSection}>
+            {/* FOSSA License & Dependency Report (show only when user enabled FOSSA) */}
+            {runFossa && (migrationJob || fossaResult) && (<div style={styles.reportSection}>
   <h3 style={styles.reportTitle}>📜 FOSSA License & Dependency Scan</h3>
 
   <div style={styles.sonarqubeGrid}>
