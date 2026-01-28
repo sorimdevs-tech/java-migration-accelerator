@@ -1491,7 +1491,19 @@ async def run_migration(job_id: str, request: MigrationRequest):
         # Step 5: SonarQube analysis
         if request.run_sonar:
             update_job(job_id, MigrationStatus.SONAR_ANALYSIS, 75, "Running SonarQube code quality analysis...")
-            sonar_result = await sonarqube_service.analyze_project(clone_path, job_id)
+            # Derive a Sonar project key from the source repo (owner/repo) so public SonarCloud projects can be looked up
+            project_key = job.source_repo
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(job.source_repo)
+                if parsed.scheme and parsed.path:
+                    parts = [p for p in parsed.path.split('/') if p]
+                    if len(parts) >= 2:
+                        project_key = f"{parts[0]}/{parts[1]}"
+            except Exception:
+                project_key = job.source_repo
+
+            sonar_result = await sonarqube_service.analyze_project(clone_path, project_key)
             job.sonar_quality_gate = sonar_result.get("quality_gate", "N/A")
             job.sonar_bugs = sonar_result.get("bugs", 0)
             job.sonar_vulnerabilities = sonar_result.get("vulnerabilities", 0)
