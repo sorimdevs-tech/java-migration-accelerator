@@ -86,6 +86,7 @@ export interface MigrationRequest {
   email?: string;
   run_tests: boolean;
   run_sonar: boolean;
+  run_fossa?: boolean;
   fix_business_logic: boolean;
 }
 
@@ -111,6 +112,12 @@ export interface MigrationResult {
   sonar_vulnerabilities: number;
   sonar_code_smells: number;
   sonar_coverage: number;
+  // FOSSA scan results (optional)
+  fossa_policy_status?: string | null;
+  fossa_total_dependencies?: number;
+  fossa_license_issues?: number;
+  fossa_vulnerabilities?: number;
+  fossa_outdated_dependencies?: number;
   error_message: string | null;
   migration_log: string[];
   issues: MigrationIssue[];
@@ -127,6 +134,8 @@ export interface RepoAnalysis {
   language: string | null;
   build_tool: string | null;
   java_version: string | null;
+  // List of discovered Java source file paths
+  java_files?: string[];
   has_tests: boolean;
   dependencies: DependencyInfo[];
   api_endpoints: { path: string; method: string; file: string }[];
@@ -254,6 +263,65 @@ export async function getMigrationLogs(jobId: string): Promise<{ job_id: string;
   return response.json();
 }
 
+// Get FOSSA scan results for a migration (if available)
+export async function getMigrationFossa(jobId: string): Promise<{
+  job_id: string;
+  policy_status?: string | null;
+  total_dependencies?: number;
+  license_issues?: number;
+  vulnerabilities?: number;
+  outdated_dependencies?: number;
+}> {
+  const response = await fetch(`${API_BASE_URL}/migration/${jobId}/fossa`);
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to get FOSSA results');
+  }
+
+  const data = await response.json();
+  const payload = (data && data.fossa) ? data.fossa : data;
+
+  // Backend `fossa_service.py` returns keys like `compliance_status`,
+  // `total_dependencies`, `licenses` (map), `vulnerabilities` (map),
+  // and `dependencies` (array). Normalize to the frontend-friendly shape.
+  const policy_status = payload.compliance_status ?? payload.policy_status ?? null;
+  const total_dependencies = payload.total_dependencies ?? payload.totalDeps ?? 0;
+
+  // Count license issues: prefer explicit numeric field, else count UNKNOWN licenses
+  let license_issues = 0;
+  if (typeof payload.license_issues === 'number') {
+    license_issues = payload.license_issues;
+  } else if (payload.licenses && typeof payload.licenses === 'object') {
+    // Heuristic: count UNKNOWN licenses or sum non-empty license counts
+    license_issues = payload.licenses.UNKNOWN || Object.values(payload.licenses).reduce((s: number, v: any) => s + (Number(v) || 0), 0);
+  }
+
+  // Sum vulnerabilities counts if provided as an object
+  let vulnerabilities = 0;
+  if (typeof payload.vulnerabilities === 'number') {
+    vulnerabilities = payload.vulnerabilities;
+  } else if (payload.vulnerabilities && typeof payload.vulnerabilities === 'object') {
+    vulnerabilities = Object.values(payload.vulnerabilities).reduce((s: number, v: any) => s + (Number(v) || 0), 0);
+  }
+
+  // Count outdated dependencies if the dependencies list contains status field
+  let outdated_dependencies = 0;
+  if (Array.isArray(payload.dependencies)) {
+    outdated_dependencies = payload.dependencies.filter((d: any) => d.status === 'outdated' || d.status === 'out-of-date' || d.outdated === true).length;
+  } else if (typeof payload.outdated_dependencies === 'number') {
+    outdated_dependencies = payload.outdated_dependencies;
+  }
+
+  return {
+    job_id: jobId,
+    policy_status,
+    total_dependencies,
+    license_issues,
+    vulnerabilities,
+    outdated_dependencies,
+  };
+}
+
 // Download migrated project as ZIP
 export async function downloadMigratedProject(jobId: string): Promise<Blob> {
   const response = await fetch(`${API_BASE_URL}/migration/${jobId}/download-zip`);
@@ -294,5 +362,24 @@ export async function getRecipes(): Promise<{ id: string; name: string; descript
 // Health check
 export async function healthCheck(): Promise<{ status: string; timestamp: string }> {
   const response = await fetch('http://localhost:8001/health');
+  return response.json();
+}
+
+// Clone a repository and run a FOSSA analysis (backend will return simulated results when CLI unavailable)
+export async function analyzeFossaForRepo(repoUrl: string, token: string = ""): Promise<{
+  repo_url: string;
+  fossa: {
+    compliance_status?: string | null;
+    total_dependencies?: number;
+    licenses?: Record<string, number>;
+    vulnerabilities?: Record<string, number> | number;
+    outdated_dependencies?: number;
+  };
+}> {
+  const response = await fetch(`${API_BASE_URL}/fossa/analyze-url?repo_url=${encodeURIComponent(repoUrl)}&token=${encodeURIComponent(token)}`);
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to run FOSSA analyze');
+  }
   return response.json();
 }

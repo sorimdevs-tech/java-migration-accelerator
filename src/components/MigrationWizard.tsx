@@ -11,6 +11,8 @@ import {
   startMigration,
   getMigrationStatus,
   getMigrationLogs,
+  getMigrationFossa,
+  analyzeFossaForRepo,
   // Import API_BASE_URL for dynamic URL construction
 } from "../services/api";
 import { API_BASE_URL } from "../services/api";
@@ -89,6 +91,7 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   const [selectedConversions, setSelectedConversions] = useState<string[]>(["java_version"]);
   const [runTests, setRunTests] = useState(true);
   const [runSonar, setRunSonar] = useState(false);
+  const [runFossa, setRunFossa] = useState(false);
   const [fixBusinessLogic, setFixBusinessLogic] = useState(true);
 
   const [loading, setLoading] = useState(false);
@@ -114,6 +117,8 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   const [detectedFrameworks, setDetectedFrameworks] = useState<{name: string; path: string; type: string}[]>([]);
   const [viewingFrameworkFile, setViewingFrameworkFile] = useState<{name: string; path: string; content: string} | null>(null);
   const [frameworkFileLoading, setFrameworkFileLoading] = useState(false);
+  const [fossaResult, setFossaResult] = useState<any | null>(null);
+  const [fossaLoading, setFossaLoading] = useState(false);
   const [createStandardStructure, setCreateStandardStructure] = useState(false);
   // Track if user selected a version in discovery
   const [userSelectedVersion, setUserSelectedVersion] = useState<string | null>(null);
@@ -145,6 +150,44 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
     getConversionTypes().then(setConversionTypes);
   }, []);
 
+  // Fetch FOSSA results for the migration job when requested or when job already has results
+  useEffect(() => {
+    if (migrationJob?.job_id && (runFossa || migrationJob.fossa_policy_status || migrationJob.fossa_total_dependencies)) {
+      let cancelled = false;
+      setFossaLoading(true);
+      getMigrationFossa(migrationJob.job_id)
+        .then((fossa) => {
+          if (cancelled) return;
+          // store a normalized result for UI-first rendering
+          const normalized = {
+            compliance_status: fossa.policy_status ?? migrationJob.fossa_policy_status ?? null,
+            total_dependencies: fossa.total_dependencies ?? migrationJob.fossa_total_dependencies ?? 0,
+            licenses: fossa.licenses ?? (typeof fossa.license_issues === 'number' ? { UNKNOWN: fossa.license_issues } : {}),
+            vulnerabilities: fossa.vulnerabilities ?? (typeof fossa.vulnerabilities === 'number' ? fossa.vulnerabilities : undefined),
+            outdated_dependencies: fossa.outdated_dependencies ?? migrationJob.fossa_outdated_dependencies ?? 0,
+          } as any;
+
+          setFossaResult(normalized);
+
+          // also merge into migrationJob fields so other parts of the UI (downloads/reports) see them
+          setMigrationJob((prev) => prev ? ({
+            ...prev,
+            fossa_policy_status: fossa.policy_status ?? prev.fossa_policy_status,
+            fossa_total_dependencies: fossa.total_dependencies ?? prev.fossa_total_dependencies,
+            fossa_license_issues: fossa.license_issues ?? prev.fossa_license_issues,
+            fossa_vulnerabilities: fossa.vulnerabilities ?? prev.fossa_vulnerabilities,
+            fossa_outdated_dependencies: fossa.outdated_dependencies ?? prev.fossa_outdated_dependencies,
+          }) : prev);
+        })
+        .catch(() => {
+          // keep silent on failure; UI will show N/A
+        })
+        .finally(() => { if (!cancelled) setFossaLoading(false); });
+
+      return () => { cancelled = true; };
+    }
+  }, [runFossa, migrationJob?.job_id, migrationJob?.fossa_policy_status, migrationJob?.fossa_total_dependencies]);
+
   // Animation effect - starts immediately and progresses smoothly
   useEffect(() => {
     if (step === 5 && migrationJob) {
@@ -153,13 +196,13 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
       
       const animationInterval = setInterval(() => {
         setAnimationProgress(prev => {
-          const actualProgress = migrationJob.progress_percent || 0;
+          const actualProgress = migrationJob?.progress_percent || 0;
           // Smoothly catch up to actual progress, or animate forward if backend is slow
           if (actualProgress > prev) {
             return actualProgress;
           }
           // Animate forward slowly if backend hasn't updated yet (max 85% before completion)
-          if (prev < 85 && migrationJob.status !== "completed" && migrationJob.status !== "failed") {
+          if (prev < 85 && migrationJob?.status !== "completed" && migrationJob?.status !== "failed") {
             return Math.min(prev + 2, 85);
           }
           return prev;
@@ -289,9 +332,9 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
     let lastUpdateTime = Date.now();
     let stuckCheckInterval: ReturnType<typeof setInterval>;
     
-    if (step >= 5 && migrationJob && migrationJob.status !== "completed" && migrationJob.status !== "failed") {
+    if (step >= 5 && migrationJob?.status && migrationJob.status !== "completed" && migrationJob.status !== "failed") {
       interval = setInterval(() => {
-        getMigrationStatus(migrationJob.job_id)
+        getMigrationStatus(migrationJob!.job_id)
           .then((job) => {
             setMigrationJob(job);
             lastUpdateTime = Date.now();
@@ -539,6 +582,12 @@ public class UserService {
       return;
     }
 
+    // Require at least one analysis tool selected before starting migration
+    if (!runSonar && !runFossa) {
+      setError("Please select SonarQube or FOSSA before starting migration.");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
@@ -565,6 +614,7 @@ public class UserService {
       conversion_types: selectedConversions,
       run_tests: runTests,
       run_sonar: runSonar,
+      run_fossa: runFossa,
       fix_business_logic: fixBusinessLogic,
     };
 
@@ -1079,6 +1129,32 @@ public class UserService {
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+
+              {/* Run FOSSA now button */}
+              {isJavaProject && (selectedRepo || repoUrl) && (
+                <div style={{ marginTop: 12, marginBottom: 16 }}>
+                  <button
+                    style={{ padding: '10px 14px', borderRadius: 8, backgroundColor: '#3b82f6', color: '#fff', border: 'none', cursor: 'pointer' }}
+                    onClick={async () => {
+                      setFossaLoading(true);
+                      setFossaResult(null);
+                      try {
+                        const urlToAnalyze = selectedRepo?.url || repoUrl;
+                        const res = await analyzeFossaForRepo(urlToAnalyze, githubToken);
+                        setFossaResult(res.fossa || res);
+                        // Also mark runFossa toggle on so UI shows section
+                        setRunFossa(true);
+                      } catch (err: any) {
+                        setError(err.message || 'FOSSA analyze failed');
+                      } finally {
+                        setFossaLoading(false);
+                      }
+                    }}
+                  >
+                    {fossaLoading ? 'Running FOSSA...' : 'Run FOSSA Scan Now'}
+                  </button>
                 </div>
               )}
 
@@ -2524,7 +2600,8 @@ public class UserService {
 
       <div style={styles.field}>
         <label style={styles.label}>Migration Options</label>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
+        <div 
+        style={{display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px", alignItems: 'stretch'}}>
           {[
             {
               key: "runTests",
@@ -2538,13 +2615,24 @@ public class UserService {
               recommended: true
             },
             {
-              key: "runSonar",
+              key: "runSonar",   
               checked: runSonar,
               onChange: (checked: boolean) => setRunSonar(checked),
               title: "SonarQube Analysis",
               desc: "Run code quality and security analysis",
               tooltip: "Performs comprehensive code quality analysis using SonarQube. Checks for bugs, vulnerabilities, code smells, test coverage, and maintainability metrics. Provides detailed quality gate status.",
               icon: "🔍",
+              color: "#f59e0b",
+              recommended: false
+            },
+            {
+              key: "runFossa",
+              checked: runFossa,
+              onChange: (checked: boolean) => setRunFossa(checked),
+              title: "FOSSA License & Dependency Scan",
+              desc: "Run open-source dependency and license compliance analysis",
+              tooltip: "Scans project dependencies to detect open-source licenses, security risks, policy violations, and supply chain vulnerabilities. Generates a Software Bill of Materials (SBOM) and compliance reports.",
+              icon: "📜",
               color: "#f59e0b",
               recommended: false
             },
@@ -2560,9 +2648,22 @@ public class UserService {
               recommended: true
             }
           ].map((option) => (
-            <div key={option.key} style={{ position: "relative" }}>
+            <div key={option.key} style={{ position: "relative", height: '100%' }}>
               <div
-                onClick={() => option.onChange(!option.checked)}
+              onClick={() => {
+              if (option.key === "runSonar") {
+                  setRunSonar(!runSonar);
+                  setRunFossa(false);
+                  return;
+                }
+               if (option.key === "runFossa") {
+                  setRunFossa(!runFossa);
+                  setRunSonar(false);
+                  return;
+                }
+
+              option.onChange(!option.checked);
+}}
                 style={{
                   padding: 20,
                   borderRadius: 12,
@@ -2571,8 +2672,13 @@ public class UserService {
                   cursor: "pointer",
                   transition: "all 0.2s ease",
                   boxShadow: option.checked ? `0 4px 12px ${option.color}20` : "0 2px 4px rgba(0,0,0,0.05)",
-                  position: "relative"
+                  position: "relative",
+                  height: "100%",
+                  minHeight: 132,       
+                  display: "flex",              
+                  flexDirection: "column"         
                 }}
+                
                 onMouseEnter={(e) => {
                   if (!option.checked) {
                     e.currentTarget.style.borderColor = option.color;
@@ -2607,10 +2713,10 @@ public class UserService {
                     </div>
                     <div style={{ fontSize: 13, color: "#64748b" }}>{option.desc}</div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    {option.checked && (
-                      <div style={{ color: option.color, fontSize: 18, fontWeight: 700 }}>✓</div>
-                    )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 64, justifyContent: "flex-end" }}>
+                    <div style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', color: option.color, fontSize: 18, fontWeight: 700 }}>
+                      {option.checked ? '✓' : null}
+                    </div>
                     <input
                       type="checkbox"
                       checked={option.checked}
@@ -3118,22 +3224,36 @@ public class UserService {
         <div style={styles.optionsGrid}>
           <label style={styles.optionItem}>
             <input type="checkbox" checked={runTests} onChange={(e) => setRunTests(e.target.checked)} style={styles.checkbox} />
-            <div>
-              <div style={{ fontWeight: 500 }}>Run Tests</div>
+              <div>
+              <div style={{ fontWeight: 500, fontSize: 16 }}>Run Tests</div>
               <div style={{ fontSize: 12, color: "#6b7280" }}>Execute test suite after migration</div>
             </div>
           </label>
           <label style={styles.optionItem}>
             <input type="checkbox" checked={runSonar} onChange={(e) => setRunSonar(e.target.checked)} style={styles.checkbox} />
             <div>
-              <div style={{ fontWeight: 500 }}>SonarQube Analysis</div>
+              <div style={{ fontWeight: 500, fontSize: 16 }}>SonarQube Analysis</div>
               <div style={{ fontSize: 12, color: "#6b7280" }}>Run code quality analysis</div>
             </div>
           </label>
           <label style={styles.optionItem}>
+  <input
+    type="checkbox"
+    checked={runFossa}
+    onChange={(e) => setRunFossa(e.target.checked)}
+    style={styles.checkbox}
+  />
+  <div>
+    <div style={{ fontWeight: 500, fontSize: 16 }}>FOSSA License & Dependency Scan</div>
+    <div style={{ fontSize: 12, color: "#6b7280" }}>
+      Scan open-source dependencies and license compliance
+    </div>
+  </div>
+</label>
+          <label style={styles.optionItem}>
             <input type="checkbox" checked={fixBusinessLogic} onChange={(e) => setFixBusinessLogic(e.target.checked)} style={styles.checkbox} />
             <div>
-              <div style={{ fontWeight: 500 }}>Fix Business Logic Issues</div>
+              <div style={{ fontWeight: 500, fontSize: 16 }}>Fix Business Logic Issues</div>
               <div style={{ fontSize: 12, color: "#6b7280" }}>Automatically improve code quality and fix common issues</div>
             </div>
           </label>
@@ -3220,7 +3340,7 @@ public class UserService {
           {/* Status Messages */}
           <div style={styles.statusMessages}>
             <div style={styles.currentStatus}>
-              <strong>Status:</strong> {migrationJob?.status?.toUpperCase() || "INITIALIZING"}
+              <strong>Status:</strong> {((migrationJob?.current_step && /fossa/i.test(migrationJob.current_step)) ? 'FOSSA_ANALYSIS' : (migrationJob?.status?.toUpperCase() || "INITIALIZING"))}
             </div>
             <div style={styles.currentStatus}>
               {migrationJob?.current_step || "Initializing migration..."}
@@ -3246,25 +3366,25 @@ public class UserService {
     return (
       <div style={styles.card}>
         <div style={styles.stepHeader}>
-          <span style={styles.stepIcon}>{migrationJob.status === "completed" ? "✅" : migrationJob.status === "failed" ? "❌" : "⏳"}</span>
+          <span style={styles.stepIcon}>{migrationJob?.status === "completed" ? "✅" : migrationJob?.status === "failed" ? "❌" : "⏳"}</span>
           <div>
-            <h2 style={styles.title}>{migrationJob.status === "completed" ? "Migration Completed!" : migrationJob.status === "failed" ? "Migration Failed" : "Migration in Progress"}</h2>
-            <p style={styles.subtitle}>{migrationJob.current_step || "Processing..."}</p>
+            <h2 style={styles.title}>{migrationJob?.status === "completed" ? "Migration Completed!" : migrationJob?.status === "failed" ? "Migration Failed" : "Migration in Progress"}</h2>
+            <p style={styles.subtitle}>{migrationJob?.current_step || "Processing..."}</p>
           </div>
         </div>
-        {migrationJob.status === "failed" && (
+        {migrationJob?.status === "failed" && (
           <div style={{ ...styles.errorBox, padding: 20, marginBottom: 20, borderRadius: 8, backgroundColor: '#fee2e2', borderLeft: '4px solid #dc2626' }}>
             <div style={{ fontSize: 16, fontWeight: 600, color: '#7f1d1d', marginBottom: 10 }}>❌ Migration Failed</div>
-            {migrationJob.error_message && (
+            {migrationJob?.error_message && (
               <div style={{ color: '#991b1b', marginBottom: 10, fontFamily: 'monospace', fontSize: 14, padding: 10, backgroundColor: '#fecaca', borderRadius: 4 }}>
-                {migrationJob.error_message}
+                {migrationJob?.error_message}
               </div>
             )}
-            {migrationJob.migration_log && migrationJob.migration_log.length > 0 && (
+            {migrationJob?.migration_log && migrationJob.migration_log.length > 0 && (
               <div style={{ marginTop: 10 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#7f1d1d', marginBottom: 8 }}>Recent Logs:</div>
                 <div style={{ fontSize: 12, color: '#7f1d1d', fontFamily: 'monospace', maxHeight: 150, overflow: 'auto' }}>
-                  {migrationJob.migration_log.slice(-5).map((log, idx) => (
+                  {migrationJob!.migration_log.slice(-5).map((log, idx) => (
                     <div key={idx} style={{ marginBottom: 4 }}>• {log}</div>
                   ))}
                 </div>
@@ -3273,8 +3393,8 @@ public class UserService {
           </div>
         )}
         <div style={styles.progressSection}>
-          <div style={styles.progressHeader}><span>Overall Progress</span><span>{migrationJob.progress_percent}%</span></div>
-          <div style={styles.progressBar}><div style={{ ...styles.progressFill, width: `${migrationJob.progress_percent}%` }} /></div>
+          <div style={styles.progressHeader}><span>Overall Progress</span><span>{migrationJob?.progress_percent ?? 0}%</span></div>
+          <div style={styles.progressBar}><div style={{ ...styles.progressFill, width: `${migrationJob?.progress_percent ?? 0}%` }} /></div>
         </div>
         <div style={styles.statsGrid}>
           <div style={styles.statBox}><div style={styles.statValue}>{migrationJob.files_modified}</div><div style={styles.statLabel}>Files Modified</div></div>
@@ -3695,7 +3815,7 @@ public class UserService {
           </div>
 
           {/* SonarQube Code Coverage */}
-          <div style={styles.reportSection}>
+         {runSonar && ( <div style={styles.reportSection}>
             <h3 style={styles.reportTitle}>🔍 SonarQube Code Quality & Coverage</h3>
             <div style={styles.sonarqubeGrid}>
               <div style={styles.sonarqubeItem}>
@@ -3736,6 +3856,87 @@ public class UserService {
               </div>
             </div>
           </div>
+         )}
+
+            {/* FOSSA License & Dependency Report */}
+            {((runFossa || migrationJob?.fossa_policy_status != null || migrationJob?.fossa_total_dependencies != null || fossaResult) && (migrationJob || fossaResult)) && (<div style={styles.reportSection}>
+  <h3 style={styles.reportTitle}>📜 FOSSA License & Dependency Scan</h3>
+
+  <div style={styles.sonarqubeGrid}>
+    
+    {/* Policy Status */}
+    <div style={styles.sonarqubeItem}>
+      <div style={styles.qualityGate}>
+            <span
+          style={{
+            ...styles.gateStatus,
+            backgroundColor:
+              ((fossaResult?.compliance_status ?? migrationJob?.fossa_policy_status) === "PASSED")
+                    ? "#22c55e"
+                    : "#ef4444",
+          }}
+        >
+              {(fossaResult?.compliance_status ?? migrationJob?.fossa_policy_status) || "N/A"}
+        </span>
+        <span style={styles.gateLabel}>Policy Status</span>
+      </div>
+    </div>
+
+    {/* Dependency Count */}
+    <div style={styles.sonarqubeItem}>
+      <div style={styles.coverageMeter}>
+        <div style={styles.coverageCircle}>
+            <span style={styles.coveragePercent}>
+            {fossaLoading ? "Loading..." : (fossaResult?.total_dependencies ?? migrationJob?.fossa_total_dependencies ?? "N/A")}
+          </span>
+          <span style={styles.coverageLabel}>Dependencies</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {/* FOSSA Metrics */}
+  <div style={styles.qualityMetrics}>
+    
+    <div style={styles.metricItem}>
+          <span
+        style={{
+          ...styles.metricValue,
+          color: ((fossaResult ? (Object.values(fossaResult.licenses || {}).reduce((s: any, v: any) => s + (Number(v)||0), 0)) : (migrationJob?.fossa_license_issues ?? 0)) > 0) ? "#ef4444" : "#22c55e",
+        }}
+      >
+        {fossaLoading ? "Loading..." : (fossaResult ? (Object.values(fossaResult.licenses || {}).reduce((s: any, v: any) => s + (Number(v)||0), 0)) : (migrationJob?.fossa_license_issues ?? 0))}
+      </span>
+      <span style={styles.metricLabel}>License Issues</span>
+    </div>
+
+    <div style={styles.metricItem}>
+      <span
+        style={{
+          ...styles.metricValue,
+          color: (migrationJob?.fossa_vulnerabilities ?? 0) > 0 ? "#ef4444" : "#22c55e",
+        }}
+      >
+        {fossaLoading ? "Loading..." : (fossaResult ? (typeof fossaResult.vulnerabilities === 'number' ? fossaResult.vulnerabilities : Object.values(fossaResult.vulnerabilities || {}).reduce((s: any, v: any) => s + (Number(v)||0), 0)) : (migrationJob?.fossa_vulnerabilities ?? 0))}
+      </span>
+      <span style={styles.metricLabel}>Vulnerabilities</span>
+    </div>
+
+    <div style={styles.metricItem}>
+      <span
+        style={{
+          ...styles.metricValue,
+          color: (migrationJob?.fossa_outdated_dependencies ?? 0) > 0 ? "#f59e0b" : "#22c55e",
+        }}
+      >
+        {fossaLoading ? "Loading..." : (fossaResult ? (fossaResult.outdated_dependencies ?? 0) : (migrationJob?.fossa_outdated_dependencies ?? 0))}
+      </span>
+      <span style={styles.metricLabel}>Outdated Packages</span>
+    </div>
+
+  </div>
+</div>
+  )}
 
           {/* Unit Test Report */}
           <div style={styles.reportSection}>
@@ -3770,12 +3971,12 @@ public class UserService {
             <div style={styles.jmeterGrid}>
               <div style={styles.jmeterItem}>
                 <span style={styles.jmeterLabel}>API Endpoints Tested</span>
-                <span style={styles.jmeterValue}>{migrationJob.api_endpoints_validated}</span>
+                <span style={styles.jmeterValue}>{migrationJob?.api_endpoints_validated ?? 0}</span>
               </div>
               <div style={styles.jmeterItem}>
                 <span style={styles.jmeterLabel}>Working Endpoints</span>
-                <span style={{ ...styles.jmeterValue, color: migrationJob.api_endpoints_working === migrationJob.api_endpoints_validated ? "#22c55e" : "#f59e0b" }}>
-                  {migrationJob.api_endpoints_working}/{migrationJob.api_endpoints_validated}
+                <span style={{ ...styles.jmeterValue, color: (migrationJob?.api_endpoints_working ?? 0) === (migrationJob?.api_endpoints_validated ?? 0) && (migrationJob?.api_endpoints_validated ?? 0) > 0 ? "#22c55e" : "#f59e0b" }}>
+                  {migrationJob?.api_endpoints_working ?? 0}/{migrationJob?.api_endpoints_validated ?? 0}
                 </span>
               </div>
               <div style={styles.jmeterItem}>
@@ -3936,6 +4137,17 @@ migrationJob.dependencies.map(dep => `- **${dep.group_id}:${dep.artifact_id}** -
 | Throughput | 150 req/sec |
 
 ---
+
+## 📜 FOSSA License & Dependency Scan
+
+| Metric | Value |
+|--------|-------|
+| Policy Status | ${migrationJob?.fossa_policy_status || 'N/A'} |
+| Total Dependencies | ${migrationJob?.fossa_total_dependencies ?? 'N/A'} |
+| License Issues | ${migrationJob?.fossa_license_issues ?? 0} |
+| Vulnerabilities | ${migrationJob?.fossa_vulnerabilities ?? 0} |
+| Outdated Packages | ${migrationJob?.fossa_outdated_dependencies ?? 0} |
+
 
 ## 🛡️ Business Logic Improvements
 
