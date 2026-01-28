@@ -68,12 +68,29 @@ migration_jobs = {}
 
 
 class JavaVersion(str, Enum):
+    JAVA_1 = "1"
+    JAVA_2 = "2"
+    JAVA_3 = "3"
+    JAVA_4 = "4"
+    JAVA_5 = "5"
+    JAVA_6 = "6"
     JAVA_7 = "7"
     JAVA_8 = "8"
+    JAVA_9 = "9"
+    JAVA_10 = "10"
     JAVA_11 = "11"
+    JAVA_12 = "12"
+    JAVA_13 = "13"
+    JAVA_14 = "14"
+    JAVA_15 = "15"
+    JAVA_16 = "16"
     JAVA_17 = "17"
     JAVA_18 = "18"
+    JAVA_19 = "19"
+    JAVA_20 = "20"
     JAVA_21 = "21"
+    JAVA_22 = "22"
+    JAVA_23 = "23"
 
 
 class ConversionType(str, Enum):
@@ -192,6 +209,21 @@ class MigrationResult(BaseModel):
     total_warnings: int = 0
     errors_fixed: int = 0
     warnings_fixed: int = 0
+    # Phase timings
+    connection_duration: str = "0m 0s"
+    discovery_duration: str = "0m 0s"
+    strategy_duration: str = "0m 0s"
+    migration_duration: str = "0m 0s"
+    total_duration: str = "0m 0s"
+    # Internal timestamp tracking
+    connection_start: Optional[datetime] = None
+    connection_end: Optional[datetime] = None
+    discovery_start: Optional[datetime] = None
+    discovery_end: Optional[datetime] = None
+    strategy_start: Optional[datetime] = None
+    strategy_end: Optional[datetime] = None
+    migration_start: Optional[datetime] = None
+    migration_end: Optional[datetime] = None
 
 
 class RepoInfo(BaseModel):
@@ -1304,8 +1336,14 @@ def calculate_duration(start_time, end_time):
 # Version and Recipe Endpoints
 @app.get("/api/java-versions")
 async def get_java_versions():
-    """Get supported Java versions for migration"""
+    """Get supported Java versions for migration (from Java 1 to latest)"""
     all_versions = [
+        {"value": "1", "label": "Java 1 (Legacy)"},
+        {"value": "2", "label": "Java 2 (Legacy)"},
+        {"value": "3", "label": "Java 3 (Legacy)"},
+        {"value": "4", "label": "Java 4 (Legacy)"},
+        {"value": "5", "label": "Java 5"},
+        {"value": "6", "label": "Java 6"},
         {"value": "7", "label": "Java 7"},
         {"value": "8", "label": "Java 8 (LTS)"},
         {"value": "9", "label": "Java 9"},
@@ -1402,8 +1440,21 @@ async def get_conversion_types():
 async def run_migration(job_id: str, request: MigrationRequest):
     """Background task to run the full migration pipeline"""
     job = migration_jobs[job_id]
+    from datetime import datetime, timezone
 
     try:
+        # Record overall start time
+        job.started_at = datetime.now(timezone.utc)
+
+        # Validate and normalize source Java version (reject "auto" or invalid values)
+        try:
+            source_version = int(request.source_java_version)
+        except (ValueError, TypeError):
+            # If source_version is "auto" or invalid, default to 8
+            source_version = 8
+            add_log(job_id, f"Warning: Invalid source Java version '{request.source_java_version}', defaulting to Java 8")
+            request.source_java_version = "8"
+        
         # Determine which service to use based on platform
         if request.platform == GitPlatform.GITLAB:
             repo_service = gitlab_service
@@ -1412,15 +1463,25 @@ async def run_migration(job_id: str, request: MigrationRequest):
             repo_service = github_service
             token_field = "token"  # Updated to match new field name
 
-        # Step 1: Clone repository
+        # Step 1: Clone repository (Connection Phase)
+        job.connection_start = datetime.now(timezone.utc)
         update_job(job_id, MigrationStatus.CLONING, 5, "Cloning source repository...")
         clone_path = await repo_service.clone_repository(
             request.token,  # Use the generic token field
             request.source_repo_url
         )
+        job.connection_end = datetime.now(timezone.utc)
         add_log(job_id, f"Repository cloned to {clone_path}")
         
-        # Step 2: Analyze project and detect initial issues
+        # Calculate connection duration
+        if job.connection_start and job.connection_end:
+            duration_ms = (job.connection_end - job.connection_start).total_seconds() * 1000
+            minutes = int(duration_ms // 60000)
+            seconds = int((duration_ms % 60000) // 1000)
+            job.connection_duration = f"{minutes}m {seconds}s"
+        
+        # Step 2: Analyze project and detect initial issues (Discovery Phase)
+        job.discovery_start = datetime.now(timezone.utc)
         update_job(job_id, MigrationStatus.ANALYZING, 15, "Analyzing project structure and detecting issues...")
         analysis = await migration_service.analyze_project(clone_path)
         # Convert dependencies dicts to DependencyInfo objects
@@ -1446,8 +1507,17 @@ async def run_migration(job_id: str, request: MigrationRequest):
         job.total_errors = len([i for i in initial_issues if i.severity == IssueSeverity.ERROR])
         job.total_warnings = len([i for i in initial_issues if i.severity == IssueSeverity.WARNING])
         add_log(job_id, f"Found {job.total_errors} errors, {job.total_warnings} warnings to process")
+        job.discovery_end = datetime.now(timezone.utc)
         
-        # Step 3: Run migrations for each selected conversion type
+        # Calculate discovery duration
+        if job.discovery_start and job.discovery_end:
+            duration_ms = (job.discovery_end - job.discovery_start).total_seconds() * 1000
+            minutes = int(duration_ms // 60000)
+            seconds = int((duration_ms % 60000) // 1000)
+            job.discovery_duration = f"{minutes}m {seconds}s"
+        
+        # Step 3: Run migrations for each selected conversion type (Strategy Phase)
+        job.strategy_start = datetime.now(timezone.utc)
         progress = 30
         for conv_type in request.conversion_types:
             update_job(job_id, MigrationStatus.MIGRATING, progress, f"Running {conv_type} migration...")
@@ -1479,8 +1549,17 @@ async def run_migration(job_id: str, request: MigrationRequest):
         add_log(job_id, f"Modified {job.files_modified} files, fixed {job.issues_fixed} issues")
         job.errors_fixed = len([i for i in job.issues if i.severity == IssueSeverity.ERROR and i.status == IssueStatus.FIXED])
         job.warnings_fixed = len([i for i in job.issues if i.severity == IssueSeverity.WARNING and i.status == IssueStatus.FIXED])
+        job.strategy_end = datetime.now(timezone.utc)
         
-        # Step 4: Run tests
+        # Calculate strategy duration
+        if job.strategy_start and job.strategy_end:
+            duration_ms = (job.strategy_end - job.strategy_start).total_seconds() * 1000
+            minutes = int(duration_ms // 60000)
+            seconds = int((duration_ms % 60000) // 1000)
+            job.strategy_duration = f"{minutes}m {seconds}s"
+        
+        # Step 4: Run tests (Migration Phase Start)
+        job.migration_start = datetime.now(timezone.utc)
         if request.run_tests:
             update_job(job_id, MigrationStatus.TESTING, 60, "Running tests and validating APIs...")
             test_result = await migration_service.run_tests(clone_path)
@@ -1570,6 +1649,23 @@ async def run_migration(job_id: str, request: MigrationRequest):
             else:
                 add_log(job_id, f"Failed to send migration summary to {request.email}")
         
+        # Mark end of migration phase
+        job.migration_end = datetime.now(timezone.utc)
+        
+        # Calculate migration phase duration
+        if job.migration_start and job.migration_end:
+            duration_ms = (job.migration_end - job.migration_start).total_seconds() * 1000
+            minutes = int(duration_ms // 60000)
+            seconds = int((duration_ms % 60000) // 1000)
+            job.migration_duration = f"{minutes}m {seconds}s"
+        
+        # Calculate total migration duration
+        if job.started_at and job.migration_end:
+            total_duration_ms = (job.migration_end - job.started_at).total_seconds() * 1000
+            total_minutes = int(total_duration_ms // 60000)
+            total_seconds = int((total_duration_ms % 60000) // 1000)
+            job.total_duration = f"{total_minutes}m {total_seconds}s"
+        
         # Complete
         update_job(job_id, MigrationStatus.COMPLETED, 100, "Migration completed successfully!")
         job.completed_at = datetime.now(timezone.utc)
@@ -1609,8 +1705,18 @@ def generate_migration_issues(
     # Check for any java files directly in project root (standalone Java files!)
     java_dirs.append(project_path)
     
-    source = int(source_version)
-    target = int(target_version)
+    # Validate and convert versions to integers
+    try:
+        source = int(source_version)
+    except (ValueError, TypeError):
+        print(f"Warning: Invalid source version '{source_version}', defaulting to 8")
+        source = 8
+    
+    try:
+        target = int(target_version)
+    except (ValueError, TypeError):
+        print(f"Warning: Invalid target version '{target_version}', defaulting to 17")
+        target = 17
     
     print(f"Scanning directories: {java_dirs}")
     

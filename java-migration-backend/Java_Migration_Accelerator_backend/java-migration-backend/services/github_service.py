@@ -161,6 +161,7 @@ class GitHubService:
                     java_version_result = self._detect_java_version_from_pom(pom_content)
                     analysis["java_version_from_build"] = java_version_result["version"]
                     analysis["java_version_detected_from_build"] = java_version_result["detected"]
+                    analysis["java_version"] = java_version_result["version"]  # Set main java_version field
                     analysis["dependencies"] = self._parse_pom_dependencies(pom_content)
                     is_java_project = True
 
@@ -171,6 +172,7 @@ class GitHubService:
                     java_version_result = self._detect_java_version_from_gradle(gradle_content)
                     analysis["java_version_from_build"] = java_version_result["version"]
                     analysis["java_version_detected_from_build"] = java_version_result["detected"]
+                    analysis["java_version"] = java_version_result["version"]  # Set main java_version field
                     is_java_project = True
 
                 # Check for other build systems

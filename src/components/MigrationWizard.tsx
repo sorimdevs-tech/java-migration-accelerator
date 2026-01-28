@@ -124,6 +124,18 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   const [userSelectedVersion, setUserSelectedVersion] = useState<string | null>(null);
   // Track if no version was detected/selected
   const [sourceVersionStatus, setSourceVersionStatus] = useState<"detected" | "not_selected" | "unknown">("unknown");
+  // Info popup state
+  const [showVersionInfoPopup, setShowVersionInfoPopup] = useState(false);
+  
+  // Review & Acknowledgment state
+  const [reviewAcknowledged, setReviewAcknowledged] = useState(false);
+  
+  // Time tracking for analysis
+  const [analysisStartTime, setAnalysisStartTime] = useState<number | null>(null);
+  const [analysisDuration, setAnalysisDuration] = useState<string>("0m 0s");
+  
+  // Build Modernization acknowledgment
+  const [migrationConfigAcknowledged, setMigrationConfigAcknowledged] = useState(false);
 
   // Code diff viewer states for Result page
   const [codeChanges, setCodeChanges] = useState<{
@@ -150,9 +162,9 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
     getConversionTypes().then(setConversionTypes);
   }, []);
 
-  // Fetch FOSSA results for the migration job when requested or when job already has results
+  // Fetch FOSSA results for the migration job ONLY when runFossa is checked
   useEffect(() => {
-    if (migrationJob?.job_id && (runFossa || migrationJob.fossa_policy_status || migrationJob.fossa_total_dependencies)) {
+    if (migrationJob?.job_id && runFossa) {
       let cancelled = false;
       setFossaLoading(true);
       getMigrationFossa(migrationJob.job_id)
@@ -219,12 +231,20 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
     if (step === 2 && selectedRepo && !repoAnalysis) {
       setLoading(true);
       setError("");
+      const startTime = Date.now();
+      setAnalysisStartTime(startTime);
 
       // For URL mode, analyze the repository URL
       const analyzePromise = analyzeRepoUrl(selectedRepo.url, githubToken).then(result => result.analysis);
 
       analyzePromise
         .then((analysis) => {
+          const endTime = Date.now();
+          const durationMs = endTime - startTime;
+          const minutes = Math.floor(durationMs / 60000);
+          const seconds = Math.floor((durationMs % 60000) / 1000);
+          setAnalysisDuration(`${minutes}m ${seconds}s`);
+          
           setRepoAnalysis(analysis);
           // Check if it's a Java project
           // Consider as Java project if any .java files are found (even if no build file or version is detected)
@@ -243,8 +263,8 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
           
           if (hasJavaIndicators && (!hasBuildConfig || !hasKnownJavaVersion)) {
             setIsHighRiskProject(true);
-            // Suggest Java 17 as default for unknown versions (LTS and widely supported)
-            setSuggestedJavaVersion("17");
+            // Default to auto-detect for unknown versions (recommended)
+            setSuggestedJavaVersion("auto");
           } else {
             setIsHighRiskProject(false);
           }
@@ -662,7 +682,7 @@ public class UserService {
     // Reset high-risk project states
     setIsHighRiskProject(false);
     setHighRiskConfirmed(false);
-    setSuggestedJavaVersion("17");
+    setSuggestedJavaVersion("auto");
     setDetectedFrameworks([]);
     setViewingFrameworkFile(null);
     setCreateStandardStructure(true);
@@ -1037,7 +1057,12 @@ public class UserService {
 
       {selectedRepo && (
         <>
-          {loading ? <div style={styles.loadingBox}><div style={styles.spinner}></div><span>Analyzing repository...</span></div> : (
+          {loading ? (
+            <div style={styles.loadingBox}>
+              <div style={styles.spinner}></div>
+              <span>Analyzing repository...</span>
+            </div>
+          ) : (
             <>
               {/* Not a Java Project Alert or No Framework Detected */}
               {isJavaProject === false ? (
@@ -1112,25 +1137,10 @@ public class UserService {
                 </div>
               )}
 
-              {/* Show repo file structure if Java project */}
-              {isJavaProject && repoFiles && repoFiles.length > 0 && (
-                <div style={{
-                  background: "#f1f5f9",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: 8,
-                  padding: 16,
-                  marginBottom: 24
-                }}>
-                  <div style={{ fontWeight: 600, marginBottom: 8, color: "#334155" }}>Repository File Structure</div>
-                  <ul style={{ fontFamily: 'monospace', fontSize: 14, margin: 0, paddingLeft: 20 }}>
-                    {repoFiles.map((file, idx) => (
-                      <li key={idx} style={{ color: file.type === 'dir' ? '#0ea5e9' : '#64748b' }}>
-                        {file.type === 'dir' ? '📁' : '📄'} {file.name}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              {/* Show repo file structure if Java project - HIDDEN (Using new flex layout below instead) */}
+              {/* isJavaProject && repoFiles && repoFiles.length > 0 && (
+                <div style={{...}}>...</div>
+              ) */}
 
               {/* Run FOSSA now button */}
               {isJavaProject && (selectedRepo || repoUrl) && (
@@ -1257,10 +1267,17 @@ public class UserService {
                           <select
                             value={suggestedJavaVersion}
                             onChange={(e) => {
-                            setSuggestedJavaVersion(e.target.value);
-                            setSelectedSourceVersion(e.target.value === "auto" ? "8" : e.target.value); // Default to 8 if auto-detect
-                            setUserSelectedVersion(e.target.value); // Track that user made a selection
-                            setSourceVersionStatus("detected");
+                              const selected = e.target.value;
+                              setSuggestedJavaVersion(selected);
+                              // Only set userSelectedVersion if not auto-detect
+                              if (selected !== "auto") {
+                                setSelectedSourceVersion(selected);
+                                setUserSelectedVersion(selected);
+                              } else {
+                                setUserSelectedVersion(null); // Clear user selection to use auto-detect
+                                setSelectedSourceVersion(repoAnalysis?.java_version || "8"); // Use detected or fallback
+                              }
+                              setSourceVersionStatus("detected");
                             }}
                             style={{
                               padding: "10px 14px",
@@ -1273,11 +1290,9 @@ public class UserService {
                             }}
                           >
                             <option value="auto">🔍 Auto-detect from code (Recommended)</option>
-                            <option value="7">Java 7 (Legacy)</option>
-                            <option value="8">Java 8 (LTS)</option>
-                            <option value="11">Java 11 (LTS)</option>
-                            <option value="17">Java 17 (LTS)</option>
-                            <option value="21">Java 21 (LTS)</option>
+                            {sourceVersions.map((v) => (
+                              <option key={v.value} value={v.value}>{v.label}</option>
+                            ))}
                           </select>
                           <div style={{ fontSize: 11, color: "#a16207", marginTop: 6 }}>
                             💡 Auto-detect analyzes your code to determine the correct Java version
@@ -1404,6 +1419,25 @@ public class UserService {
                   {/* Show content only after high-risk confirmation or if not high-risk */}
                   {(!isHighRiskProject || highRiskConfirmed) && (
                     <>
+                      {/* Analysis Duration Info */}
+                      {analysisDuration && analysisDuration !== "0m 0s" && (
+                        <div style={{
+                          padding: 12,
+                          backgroundColor: "#e0f2fe",
+                          border: "1px solid #7dd3fc",
+                          borderRadius: 8,
+                          marginBottom: 16,
+                          fontSize: 13,
+                          color: "#0369a1",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8
+                        }}>
+                          <span>⏱️</span>
+                          <span>Repository analysis completed in <strong>{analysisDuration}</strong></span>
+                        </div>
+                      )}
+                      
                   {/* GitHub-like File Explorer */}
                   <div style={styles.sectionTitle}>📂 Repository Files</div>
                   <div style={{
@@ -1413,7 +1447,7 @@ public class UserService {
                     marginBottom: 24,
                     backgroundColor: "#fff"
                   }}>
-                    {/* Header bar like GitHub */}
+                    {/* Header bar like GitHub - with Java Files Stats */}
                     <div style={{
                       display: "flex",
                       alignItems: "center",
@@ -1422,14 +1456,25 @@ public class UserService {
                       backgroundColor: "#f6f8fa",
                       borderBottom: "1px solid #d0d7de"
                     }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontWeight: 600, color: "#24292f" }}>{selectedRepo.name}</span>
-                        {currentPath && (
-                          <>
-                            <span style={{ color: "#57606a" }}>/</span>
-                            <span style={{ color: "#0969da" }}>{currentPath}</span>
-                          </>
-                        )}
+                      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontWeight: 600, color: "#24292f" }}>{selectedRepo.name}</span>
+                          {currentPath && (
+                            <>
+                              <span style={{ color: "#57606a" }}>/</span>
+                              <span style={{ color: "#0969da" }}>{currentPath}</span>
+                            </>
+                          )}
+                        </div>
+                        {/* Java Files Stats */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingLeft: 16, borderLeft: "1px solid #d0d7de" }}>
+                          <span style={{ fontSize: 12, color: "#57606a" }}>
+                            📄 {repoAnalysis?.file_count || 0} files
+                          </span>
+                          <span style={{ fontSize: 12, color: "#0969da", fontWeight: 600 }}>
+                            ☕ {repoAnalysis?.java_files_count || 0} Java files
+                          </span>
+                        </div>
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
                         {currentPath && (
@@ -1715,31 +1760,7 @@ public class UserService {
                     )}
                   </div>
 
-                  {/* Discovery Info */}
-                  <div style={styles.discoveryContent}>
-                    <div style={styles.discoveryItem}>
-                      <span style={styles.discoveryIcon}>📊</span>
-                      <div>
-                        <div style={styles.discoveryTitle}>Repository Analysis</div>
-                        <div style={styles.discoveryDesc}>Scanning {selectedRepo.name} for Java components</div>
-                      </div>
-                    </div>
-                    <div style={styles.discoveryItem}>
-                      <span style={styles.discoveryIcon}>🔧</span>
-                      <div>
-                        <div style={styles.discoveryTitle}>Build Tool: {repoAnalysis?.build_tool || "Detecting..."}</div>
-                        <div style={styles.discoveryDesc}>Identified build system for dependency management</div>
-                      </div>
-                    </div>
-                    <div style={styles.discoveryItem}>
-                      <span style={styles.discoveryIcon}>☕</span>
-                      <div>
-                        <div style={styles.discoveryTitle}>Java Version: {repoAnalysis?.java_version || "Detecting..."}</div>
-                        <div style={styles.discoveryDesc}>Current Java version detected in the project</div>
-                      </div>
-                    </div>
-                  </div>
-
+                  {/* Discovery Info - Using Flex Layout */}
                   {/* Dependencies List */}
                   {repoAnalysis && repoAnalysis.dependencies && repoAnalysis.dependencies.length > 0 && (
                     <div style={styles.field}>
@@ -2150,11 +2171,168 @@ public class UserService {
 
           <div style={styles.assessmentGrid}>
             <div style={styles.assessmentItem}><div style={styles.assessmentLabel}>Build Tool</div><div style={styles.assessmentValue}>{repoAnalysis.build_tool || "Not Detected"}</div></div>
-            <div style={styles.assessmentItem}><div style={styles.assessmentLabel}>Java Version</div><div style={styles.assessmentValue}>{repoAnalysis.java_version || "Unknown"}</div></div>
+            <div style={styles.assessmentItem}>
+              <div style={styles.assessmentLabel}>
+                Java Version
+                {userSelectedVersion && (
+                  <button
+                    onClick={() => setShowVersionInfoPopup(true)}
+                    title="Click for more information"
+                    style={{
+                      display: "inline-block",
+                      marginLeft: 6,
+                      width: 20,
+                      height: 20,
+                      backgroundColor: "#10b981",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "50%",
+                      textAlign: "center",
+                      lineHeight: "20px",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                      boxShadow: "0 2px 4px rgba(16, 185, 129, 0.3)"
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.target as HTMLElement).style.backgroundColor = "#059669";
+                      (e.target as HTMLElement).style.transform = "scale(1.1)";
+                      (e.target as HTMLElement).style.boxShadow = "0 4px 8px rgba(16, 185, 129, 0.5)";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.target as HTMLElement).style.backgroundColor = "#10b981";
+                      (e.target as HTMLElement).style.transform = "scale(1)";
+                      (e.target as HTMLElement).style.boxShadow = "0 2px 4px rgba(16, 185, 129, 0.3)";
+                    }}
+                  >
+                    ℹ
+                  </button>
+                )}
+              </div>
+              <div style={{
+                ...styles.assessmentValue,
+                backgroundColor: userSelectedVersion ? "#f0fdf4" : "transparent",
+                color: userSelectedVersion ? "#166534" : "#374151",
+                fontWeight: userSelectedVersion ? 700 : 500,
+                padding: userSelectedVersion ? "4px 8px" : "0px"
+              }}>
+                {userSelectedVersion ? `✓ Java ${selectedSourceVersion}` : (repoAnalysis.java_version || "Unknown")}
+              </div>
+            </div>
             <div style={styles.assessmentItem}><div style={styles.assessmentLabel}>Has Tests</div><div style={styles.assessmentValue}>{repoAnalysis.has_tests ? "Yes" : "No"}</div></div>
             <div style={styles.assessmentItem}><div style={styles.assessmentLabel}>Dependencies</div><div style={styles.assessmentValue}>{repoAnalysis.dependencies?.length || 0} found</div></div>
           </div>
         </>
+      )}
+
+      {/* Java Version Info Popup Modal */}
+      {showVersionInfoPopup && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: "#fff",
+            borderRadius: 12,
+            boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
+            maxWidth: 500,
+            padding: 32,
+            animation: "slideUp 0.3s ease-out"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+              <div style={{
+                width: 40,
+                height: 40,
+                backgroundColor: "#10b981",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 24,
+                color: "#fff"
+              }}>
+                ℹ
+              </div>
+              <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#1f2937" }}>
+                Java Version Selection
+              </h3>
+            </div>
+
+            <div style={{ marginBottom: 20, lineHeight: "1.6", color: "#374151", fontSize: 14 }}>
+              <div style={{ marginBottom: 16 }}>
+                <strong style={{ color: "#10b981" }}>✓ Selected Version:</strong>
+                <div style={{ marginTop: 4, fontSize: 16, fontWeight: 600, color: "#1f2937" }}>
+                  Java {selectedSourceVersion}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <strong style={{ color: "#6b7280" }}>📊 Original Detected:</strong>
+                <div style={{ marginTop: 4, color: "#6b7280" }}>
+                  {repoAnalysis?.java_version || "Not detected"}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <strong style={{ color: "#3b82f6" }}>🎯 What this means:</strong>
+                <ul style={{ margin: "8px 0 0 20px", paddingLeft: 0 }}>
+                  <li>Your project will be migrated FROM Java {selectedSourceVersion}</li>
+                  <li>All APIs deprecated after Java {selectedSourceVersion} will be modernized</li>
+                  <li>Code patterns will be updated to use modern Java features</li>
+                  <li>Build configuration will be updated accordingly</li>
+                </ul>
+              </div>
+
+              <div style={{
+                backgroundColor: "#f0fdf4",
+                border: "1px solid #86efac",
+                borderRadius: 8,
+                padding: 12,
+                marginTop: 16
+              }}>
+                <strong style={{ color: "#166534" }}>💡 Tip:</strong>
+                <div style={{ marginTop: 6, color: "#166534", fontSize: 13 }}>
+                  Make sure this matches your actual project's Java version. Check your pom.xml (&lt;source&gt; tag) or build.gradle (sourceCompatibility) to verify.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShowVersionInfoPopup(false)}
+                style={{
+                  padding: "10px 20px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  backgroundColor: "#f9fafb",
+                  color: "#374151",
+                  cursor: "pointer",
+                  fontWeight: 500,
+                  transition: "all 0.2s ease"
+                }}
+                onMouseEnter={(e) => {
+                  (e.target as HTMLElement).style.backgroundColor = "#f3f4f6";
+                  (e.target as HTMLElement).style.borderColor = "#9ca3af";
+                }}
+                onMouseLeave={(e) => {
+                  (e.target as HTMLElement).style.backgroundColor = "#f9fafb";
+                  (e.target as HTMLElement).style.borderColor = "#d1d5db";
+                }}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Strategy Section */}
@@ -2298,28 +2476,89 @@ public class UserService {
         <div style={styles.row}>
             <div style={styles.field}>
               <label style={styles.label}>Source Java Version</label>
-              <div style={{
-                padding: "12px 14px",
-                fontSize: 14,
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                backgroundColor: "#f9fafb",
-                color: userSelectedVersion ? "#1e293b" : "#6b7280",
-                fontWeight: userSelectedVersion ? 600 : 500
-              }}>
-                {userSelectedVersion
-                  ? `Java ${selectedSourceVersion}`
-                  : (repoAnalysis?.java_version_detected_from_build === false ? "Source don't have a java version" : "Source version not detected")
-                }
-              </div>
+              {userSelectedVersion ? (
+                // Show selected version (read-only display)
+                <div style={{
+                  padding: "12px 14px",
+                  fontSize: 14,
+                  borderRadius: 8,
+                  border: "1px solid #10b981",
+                  backgroundColor: "#f0fdf4",
+                  color: "#1e293b",
+                  fontWeight: 600
+                }}>
+                  ✓ Java {selectedSourceVersion}
+                </div>
+              ) : (
+                // Show Unknown with dropdown selector
+                <>
+                  <div style={{
+                    padding: "12px 14px",
+                    fontSize: 14,
+                    borderRadius: 8,
+                    border: "1px solid #fbbf24",
+                    backgroundColor: "#fef3c7",
+                    color: "#92400e",
+                    fontWeight: 500,
+                    marginBottom: 10
+                  }}>
+                    ⚠️ Java Version: Unknown
+                  </div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#475569", marginBottom: 6 }}>
+                    Select Source Java Version:
+                  </label>
+                  <select 
+                    value={selectedSourceVersion}
+                    onChange={(e) => {
+                      setSelectedSourceVersion(e.target.value);
+                      setUserSelectedVersion(e.target.value);
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "10px 14px",
+                      fontSize: 14,
+                      borderRadius: 8,
+                      border: "2px solid #3b82f6",
+                      backgroundColor: "#fff",
+                      cursor: "pointer",
+                      fontWeight: 500
+                    }}
+                  >
+                    <option value="">-- Select a Java version --</option>
+                    {sourceVersions.map((v) => (
+                      <option key={v.value} value={v.value}>{v.label}</option>
+                    ))}
+                  </select>
+                </>
+              )}
               <p style={styles.helpText}>
                 {userSelectedVersion
-                  ? "Source version selected in discovery"
+                  ? "✓ Source version selected - ready for migration"
                   : (repoAnalysis?.java_version_detected_from_build === false
-                      ? "No Java version specified in build files - migration will analyze source code to detect version"
-                      : "No version selected in discovery - migration will start from Java 1")
+                      ? "📋 No Java version found in pom.xml or build.gradle - Please select the source Java version manually above"
+                      : "📋 Java version not detected in source code - Please select the source Java version manually above")
                 }
               </p>
+              {!userSelectedVersion && (
+                <div style={{
+                  marginTop: 10,
+                  padding: 10,
+                  backgroundColor: "#dbeafe",
+                  border: "1px solid #93c5fd",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  color: "#1e40af",
+                  lineHeight: "1.6"
+                }}>
+                  <strong>💡 How to select:</strong>
+                  <ul style={{ margin: "6px 0 0 20px", paddingLeft: 0 }}>
+                    <li>Check your project's pom.xml or build.gradle for Java version</li>
+                    <li>Look for &lt;source&gt;, &lt;java.version&gt;, or sourceCompatibility</li>
+                    <li>If unsure, select Java 8 (most common)</li>
+                    <li>LTS versions (8, 11, 17, 21) are recommended</li>
+                  </ul>
+                </div>
+              )}
             </div>
           <div style={styles.field}>
             <label style={styles.label}>Target Java Version</label>
@@ -2498,110 +2737,15 @@ public class UserService {
         )}
       </div>
 
-      {/* Common Issues to Watch - Card Design */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b", marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-          ⚠️ Common Issues to Watch
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
-          {[
-            {
-              icon: "📋",
-              title: "javax.xml.bind",
-              desc: "Missing in Java 11+ - requires explicit dependency",
-              severity: "high",
-              version: "Java 11+"
-            },
-            {
-              icon: "🚫",
-              title: "Illegal Reflective Access",
-              desc: "Warnings become errors in newer Java versions",
-              severity: "medium",
-              version: "Java 9+"
-            },
-            {
-              icon: "🔒",
-              title: "Internal JDK APIs",
-              desc: "sun.misc.* packages are blocked or removed",
-              severity: "high",
-              version: "Java 11+"
-            },
-            {
-              icon: "🧩",
-              title: "Module System (JPMS)",
-              desc: "Java Platform Module System compatibility",
-              severity: "medium",
-              version: "Java 9+"
-            }
-          ].map((issue, idx) => (
-            <div
-              key={idx}
-              style={{
-                padding: 20,
-                backgroundColor: "#fff",
-                border: `1px solid ${issue.severity === 'high' ? '#fca5a5' : '#fcd34d'}`,
-                borderRadius: 12,
-                boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
-                transition: "all 0.2s ease",
-                cursor: "default"
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
-                <div style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 12,
-                  backgroundColor: issue.severity === 'high' ? '#fef2f2' : '#fefce8',
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 20
-                }}>
-                  {issue.icon}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b" }}>
-                      {issue.title}
-                    </div>
-                    <span style={{
-                      fontSize: 10,
-                      padding: "3px 8px",
-                      borderRadius: 8,
-                      backgroundColor: issue.severity === 'high' ? '#dc2626' : '#d97706',
-                      color: "#fff",
-                      fontWeight: 600,
-                      textTransform: "uppercase"
-                    }}>
-                      {issue.severity}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.4 }}>
-                    {issue.desc}
-                  </div>
-                </div>
-              </div>
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                fontSize: 12,
-                color: "#94a3b8"
-              }}>
-                <span>Affects: {issue.version}</span>
-                <span style={{ color: issue.severity === 'high' ? '#dc2626' : '#d97706', fontWeight: 600 }}>
-                  {issue.severity === 'high' ? 'Critical' : 'Warning'}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Potential Compatibility Issues - COMMENTED OUT */}
+      {/* <div style={styles.field}>
+        <label style={styles.label}>Potential Compatibility Issues</label>
+        [Content commented out - showing compatibility matrix instead]
+      </div> */}
 
       <div style={styles.field}>
         <label style={styles.label}>Migration Options</label>
-        <div 
-        style={{display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px", alignItems: 'stretch'}}>
+        <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px", alignItems: 'stretch'}}>
           {[
             {
               key: "runTests",
@@ -3211,14 +3355,66 @@ public class UserService {
         )}
       </div>
       <div style={styles.warningBox}>
-        <div style={styles.warningTitle}>⚠️ Common Issues to Watch</div>
-        <ul style={styles.warningList}>
-          <li><strong>javax.xml.bind</strong> - Missing in Java 11+</li>
-          <li><strong>Illegal reflective access</strong> - Warnings become errors</li>
-          <li><strong>Internal JDK APIs</strong> - sun.misc.* blocked</li>
-          <li><strong>Module system</strong> - JPMS compatibility</li>
-        </ul>
       </div>
+
+      {/* What Will Change Section */}
+      <div style={styles.field}>
+        <label style={styles.label}>📋 What Will Change in Your Project</label>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+          gap: 12
+        }}>
+          <div style={{
+            padding: 14,
+            backgroundColor: "#fef3c7",
+            border: "1px solid #fcd34d",
+            borderRadius: 8,
+            fontSize: 13,
+            color: "#92400e"
+          }}>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>☕ Java Code</div>
+            <div>Modernized from Java {selectedSourceVersion} to Java {selectedTargetVersion}</div>
+          </div>
+
+          <div style={{
+            padding: 14,
+            backgroundColor: "#dbeafe",
+            border: "1px solid #93c5fd",
+            borderRadius: 8,
+            fontSize: 13,
+            color: "#1e40af"
+          }}>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>🔧 Build Files</div>
+            <div>pom.xml or build.gradle updated with new dependencies</div>
+          </div>
+
+          <div style={{
+            padding: 14,
+            backgroundColor: "#dcfce7",
+            border: "1px solid #86efac",
+            borderRadius: 8,
+            fontSize: 13,
+            color: "#166534"
+          }}>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>📦 Dependencies</div>
+            <div>Upgraded to Java {selectedTargetVersion} compatible versions</div>
+          </div>
+
+          <div style={{
+            padding: 14,
+            backgroundColor: "#f3e8ff",
+            border: "1px solid #e9d5ff",
+            borderRadius: 8,
+            fontSize: 13,
+            color: "#6b21a8"
+          }}>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>🎯 APIs & Syntax</div>
+            <div>Deprecated APIs replaced with modern Java equivalents</div>
+          </div>
+        </div>
+      </div>
+
       <div style={styles.field}>
         <label style={styles.label}>Migration Options</label>
         <div style={styles.optionsGrid}>
@@ -3260,16 +3456,320 @@ public class UserService {
         </div>
       </div>
 
+      {/* Acknowledgment Section */}
+      <div style={{
+        padding: 20,
+        backgroundColor: "#fef2f2",
+        border: "2px solid #fca5a5",
+        borderRadius: 12,
+        marginBottom: 24
+      }}>
+        <div style={{ fontSize: 16, fontWeight: 600, color: "#7f1d1d", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>✓</span> Review Migration Configuration
+        </div>
+        <label style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 12,
+          cursor: "pointer",
+          userSelect: "none"
+        }}>
+          <input
+            type="checkbox"
+            checked={migrationConfigAcknowledged}
+            onChange={(e) => setMigrationConfigAcknowledged(e.target.checked)}
+            style={{
+              width: 20,
+              height: 20,
+              cursor: "pointer",
+              accentColor: "#dc2626",
+              marginTop: 2,
+              flexShrink: 0
+            }}
+          />
+          <span style={{ fontSize: 14, color: "#1f2937", lineHeight: 1.5 }}>
+            I have reviewed all migration configuration options and understand what will be modernized. I'm ready to proceed to the review page.
+          </span>
+        </label>
+      </div>
+
       <div style={styles.btnRow}>
         <button style={styles.secondaryBtn} onClick={() => setStep(7)}>← Back</button>
-        <button style={{ ...styles.primaryBtn, opacity: loading ? 0.5 : 1 }} onClick={handleStartMigration} disabled={loading}>
-          {loading ? "Starting..." : "Start Migration 🚀"}
+        <button
+          style={{
+            ...styles.primaryBtn,
+            opacity: migrationConfigAcknowledged ? 1 : 0.5,
+            cursor: migrationConfigAcknowledged ? "pointer" : "not-allowed"
+          }}
+          onClick={() => { setReviewAcknowledged(false); setStep(4.5); }}
+          disabled={!migrationConfigAcknowledged}
+        >
+          Continue to Migration →
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderReviewStep = () => (
+    <div style={styles.card}>
+      <div style={styles.stepHeader}>
+        <span style={styles.stepIcon}>📋</span>
+        <div>
+          <h2 style={styles.title}>Review & Confirm Migration</h2>
+          <p style={styles.subtitle}>Please review all migration details and confirm before proceeding</p>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20, marginBottom: 32 }}>
+        {/* Repository Section */}
+        <div style={{
+          padding: 20,
+          backgroundColor: "#f0f9ff",
+          border: "1px solid #bfdbfe",
+          borderRadius: 12,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#1e40af", display: "flex", alignItems: "center", gap: 8 }}>
+            <span>📁</span> Repository
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Name</div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: "#1e293b" }}>{selectedRepo?.name || "N/A"}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>URL</div>
+            <div style={{ fontSize: 12, color: "#0891b2", wordBreak: "break-all", fontFamily: "monospace" }}>{repoUrl}</div>
+          </div>
+        </div>
+
+        {/* Java Version Section */}
+        <div style={{
+          padding: 20,
+          backgroundColor: "#fefce8",
+          border: "1px solid #facc15",
+          borderRadius: 12,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#854d0e", display: "flex", alignItems: "center", gap: 8 }}>
+            <span>☕</span> Java Version Migration
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>From</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#1e293b" }}>
+                Java {selectedSourceVersion}
+                {userSelectedVersion && <span style={{ fontSize: 12, color: "#6b7280", marginLeft: 8, fontWeight: 400 }}>👤 (manually selected)</span>}
+              </div>
+            </div>
+            <div style={{ fontSize: 24, color: "#854d0e" }}>→</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>To</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#1e293b" }}>Java {selectedTargetVersion}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Migration Approach Section */}
+        <div style={{
+          padding: 20,
+          backgroundColor: "#f3e8ff",
+          border: "1px solid #e9d5ff",
+          borderRadius: 12,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#6b21a8", display: "flex", alignItems: "center", gap: 8 }}>
+            <span>🔧</span> Migration Approach
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Strategy</div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: "#1e293b", textTransform: "capitalize" }}>
+              {migrationApproach === "in-place" && "In-place (Direct modification)"}
+              {migrationApproach === "branch" && "Branch-based (New branch)"}
+              {migrationApproach === "fork" && "Fork & Migrate (New repository)"}
+            </div>
+          </div>
+          {riskLevel && (
+            <div>
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Risk Level</div>
+              <div style={{
+                display: "inline-block",
+                padding: "4px 12px",
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                backgroundColor: riskLevel === "high" ? "#fee2e2" : riskLevel === "medium" ? "#fef3c7" : "#dcfce7",
+                color: riskLevel === "high" ? "#991b1b" : riskLevel === "medium" ? "#92400e" : "#166534",
+                textTransform: "capitalize"
+              }}>
+                {riskLevel} Risk
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Conversions Section */}
+        <div style={{
+          padding: 20,
+          backgroundColor: "#f0fdf4",
+          border: "1px solid #86efac",
+          borderRadius: 12,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#15803d", display: "flex", alignItems: "center", gap: 8 }}>
+            <span>🔄</span> Conversions
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {selectedConversions.map(conv => (
+              <div key={conv} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#1e293b" }}>
+                <span style={{ color: "#22c55e" }}>✓</span>
+                {conversionTypes.find(c => c.id === conv)?.title || conv}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Tools Section */}
+        <div style={{
+          padding: 20,
+          backgroundColor: "#f5f3ff",
+          border: "1px solid #d8b4fe",
+          borderRadius: 12,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#6d28d9", display: "flex", alignItems: "center", gap: 8 }}>
+            <span>🛠️</span> Tools & Features
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {runSonar && <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#1e293b" }}>
+              <span style={{ color: "#8b5cf6" }}>✓</span> SonarQube Analysis
+            </div>}
+            {runFossa && <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#1e293b" }}>
+              <span style={{ color: "#8b5cf6" }}>✓</span> FOSSA Dependency Scan
+            </div>}
+            {runTests && <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#1e293b" }}>
+              <span style={{ color: "#8b5cf6" }}>✓</span> Run Tests
+            </div>}
+            {fixBusinessLogic && <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#1e293b" }}>
+              <span style={{ color: "#8b5cf6" }}>✓</span> Fix Business Logic
+            </div>}
+          </div>
+        </div>
+
+        {/* What Will Change Section */}
+        <div style={{
+          padding: 20,
+          backgroundColor: "#fee2e2",
+          border: "1px solid #fecaca",
+          borderRadius: 12,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#991b1b", display: "flex", alignItems: "center", gap: 8 }}>
+            <span>⚡</span> Changes Summary
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#1e293b" }}>
+              <span style={{ color: "#dc2626" }}>•</span> Upgrade Java from {selectedSourceVersion} to {selectedTargetVersion}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#1e293b" }}>
+              <span style={{ color: "#dc2626" }}>•</span> Modernize deprecated APIs and syntax
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#1e293b" }}>
+              <span style={{ color: "#dc2626" }}>•</span> Update build configuration
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#1e293b" }}>
+              <span style={{ color: "#dc2626" }}>•</span> Update dependencies compatibility
+            </div>
+            {selectedConversions.includes("spring_boot_2_to_3") && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#1e293b" }}>
+                <span style={{ color: "#dc2626" }}>•</span> Migrate to Spring Boot 3 & Jakarta EE
+              </div>
+            )}
+            {selectedConversions.includes("junit_4_to_5") && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#1e293b" }}>
+                <span style={{ color: "#dc2626" }}>•</span> Upgrade JUnit 4 to JUnit 5
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Acknowledgment Section */}
+      <div style={{
+        padding: 24,
+        backgroundColor: "#fef2f2",
+        border: "2px solid #dc2626",
+        borderRadius: 12,
+        marginBottom: 24
+      }}>
+        <div style={{ fontSize: 16, fontWeight: 600, color: "#7f1d1d", marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>⚠️</span> Important: Please Review Before Proceeding
+        </div>
+        <div style={{ fontSize: 14, color: "#1f2937", lineHeight: 1.6, marginBottom: 16 }}>
+          I understand that this migration will:
+          <ul style={{ marginLeft: 24, marginTop: 8, marginBottom: 8, paddingLeft: 0, color: "#374151" }}>
+            <li>Make significant changes to my source code</li>
+            <li>Update Java version from {selectedSourceVersion} to {selectedTargetVersion}</li>
+            <li>Modify build configuration files (pom.xml, build.gradle, etc.)</li>
+            <li>Update dependencies and frameworks</li>
+            <li style={{ marginTop: 4 }}>Potentially require manual review and testing after completion</li>
+          </ul>
+        </div>
+        <label style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          cursor: "pointer",
+          userSelect: "none"
+        }}>
+          <input
+            type="checkbox"
+            checked={reviewAcknowledged}
+            onChange={(e) => setReviewAcknowledged(e.target.checked)}
+            style={{
+              width: 20,
+              height: 20,
+              cursor: "pointer",
+              accentColor: "#dc2626"
+            }}
+          />
+          <span style={{ fontSize: 14, fontWeight: 500, color: "#1f2937" }}>
+            I have reviewed all migration details and confirm that I want to proceed
+          </span>
+        </label>
+      </div>
+
+      {/* Action Buttons */}
+      <div style={styles.btnRow}>
+        <button style={styles.secondaryBtn} onClick={() => setStep(4)}>← Back to Settings</button>
+        <button
+          style={{
+            ...styles.primaryBtn,
+            opacity: reviewAcknowledged ? 1 : 0.5,
+            cursor: reviewAcknowledged ? "pointer" : "not-allowed"
+          }}
+          onClick={handleStartMigration}
+          disabled={!reviewAcknowledged || loading}
+        >
+          {loading ? "Starting..." : "🚀 Start Migration"}
         </button>
       </div>
     </div>
   );
 
   const renderMigrationAnimation = () => (
+
     <div style={styles.card}>
       <div style={styles.stepHeader}>
         <span style={styles.stepIcon}>🚀</span>
@@ -3539,7 +4039,42 @@ public class UserService {
             )}
           </div>
 
-          {/* Errors Fixed */}
+          {/* Migration Timeline & Duration */}
+          <div style={styles.reportSection}>
+            <h3 style={styles.reportTitle}>⏱️ Migration Timeline & Duration</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
+              <div style={styles.timelineItem}>
+                <span style={{ fontSize: 12, color: "#57606a" }}>🔗 Connection</span>
+                <span style={{ fontSize: 18, fontWeight: 600, color: "#1e293b" }}>{migrationJob.connection_duration || "0m 0s"}</span>
+              </div>
+              <div style={styles.timelineItem}>
+                <span style={{ fontSize: 12, color: "#57606a" }}>🔍 Discovery</span>
+                <span style={{ fontSize: 18, fontWeight: 600, color: "#1e293b" }}>{migrationJob.discovery_duration || "0m 0s"}</span>
+              </div>
+              <div style={styles.timelineItem}>
+                <span style={{ fontSize: 12, color: "#57606a" }}>📋 Strategy</span>
+                <span style={{ fontSize: 18, fontWeight: 600, color: "#1e293b" }}>{migrationJob.strategy_duration || "0m 0s"}</span>
+              </div>
+              <div style={styles.timelineItem}>
+                <span style={{ fontSize: 12, color: "#57606a" }}>🔄 Migration</span>
+                <span style={{ fontSize: 18, fontWeight: 600, color: "#1e293b" }}>{migrationJob.migration_duration || "0m 0s"}</span>
+              </div>
+            </div>
+            <div style={{
+              marginTop: 16,
+              padding: 12,
+              backgroundColor: "#dbeafe",
+              border: "1px solid #93c5fd",
+              borderRadius: 8
+            }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#0c4a6e" }}>Total Duration</span>
+                <span style={{ fontSize: 20, fontWeight: 700, color: "#0369a1" }}>{migrationJob.total_duration || "0m 0s"}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Errors Fixed - Enhanced with File Names */}
           <div style={styles.reportSection}>
             <h3 style={styles.reportTitle}>🐛 Errors Fixed</h3>
             <div style={styles.errorsSummary}>
@@ -3548,14 +4083,89 @@ public class UserService {
                 <span style={styles.errorLabel}>Errors Fixed</span>
               </div>
               <div style={styles.errorStat}>
-                <span style={styles.errorCount}>{migrationJob.total_errors}</span>
+                <span style={styles.errorCount}>{migrationJob.total_errors || 0}</span>
                 <span style={styles.errorLabel}>Remaining Errors</span>
               </div>
               <div style={styles.errorStat}>
-                <span style={styles.errorCount}>{migrationJob.total_warnings}</span>
+                <span style={styles.errorCount}>{migrationJob.total_warnings || 0}</span>
                 <span style={styles.errorLabel}>Warnings</span>
               </div>
             </div>
+
+            {/* Fixed Errors List */}
+            {migrationJob.fixed_errors && migrationJob.fixed_errors.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <h4 style={{ fontSize: 14, fontWeight: 600, color: "#1e293b", marginBottom: 12 }}>✅ Fixed Issues:</h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {migrationJob.fixed_errors.map((error, idx) => (
+                    <div key={idx} style={{
+                      padding: 12,
+                      backgroundColor: "#f0fdf4",
+                      border: "1px solid #86efac",
+                      borderRadius: 6,
+                      fontSize: 13
+                    }}>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+                        <span style={{ color: "#22c55e", fontWeight: 600 }}>✓</span>
+                        <span style={{ color: "#1e293b", fontWeight: 500 }}>{error.title}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: "#64748b" }}>📄 {error.file}</div>
+                      <div style={{ fontSize: 12, color: "#64748b" }}>Line {error.line}: {error.description}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Remaining Errors List */}
+            {migrationJob.remaining_errors && migrationJob.remaining_errors.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <h4 style={{ fontSize: 14, fontWeight: 600, color: "#1e293b", marginBottom: 12 }}>⚠️ Remaining Issues:</h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {migrationJob.remaining_errors.map((error, idx) => (
+                    <div key={idx} style={{
+                      padding: 12,
+                      backgroundColor: "#fef3c7",
+                      border: "1px solid #fcd34d",
+                      borderRadius: 6,
+                      fontSize: 13
+                    }}>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+                        <span style={{ color: "#f59e0b", fontWeight: 600 }}>!</span>
+                        <span style={{ color: "#1e293b", fontWeight: 500 }}>{error.title}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: "#64748b" }}>📄 {error.file}</div>
+                      <div style={{ fontSize: 12, color: "#64748b" }}>Line {error.line}: {error.description}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Warnings List */}
+            {migrationJob.warnings && migrationJob.warnings.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <h4 style={{ fontSize: 14, fontWeight: 600, color: "#1e293b", marginBottom: 12 }}>⚠️ Warnings:</h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {migrationJob.warnings.map((warning, idx) => (
+                    <div key={idx} style={{
+                      padding: 12,
+                      backgroundColor: "#fef08a",
+                      border: "1px solid #facc15",
+                      borderRadius: 6,
+                      fontSize: 13
+                    }}>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+                        <span style={{ color: "#eab308", fontWeight: 600 }}>⚠</span>
+                        <span style={{ color: "#1e293b", fontWeight: 500 }}>{warning.title}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: "#64748b" }}>📄 {warning.file}</div>
+                      <div style={{ fontSize: 12, color: "#64748b" }}>Line {warning.line}: {warning.description}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Business Logic Fixed */}
@@ -3592,6 +4202,162 @@ public class UserService {
               </div>
             </div>
           </div>
+
+          {/* SonarQube Results - Conditional Display */}
+          {runSonar && migrationJob.sonarqube_results && (
+            <div style={styles.reportSection}>
+              <h3 style={styles.reportTitle}>🔍 SonarQube Code Quality Analysis</h3>
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                gap: 16
+              }}>
+                <div style={{
+                  padding: 16,
+                  backgroundColor: "#fff7ed",
+                  border: "1px solid #fed7aa",
+                  borderRadius: 8
+                }}>
+                  <div style={{ fontSize: 12, color: "#57606a" }}>Bugs</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: "#f97316" }}>
+                    {migrationJob.sonarqube_results.bugs || 0}
+                  </div>
+                </div>
+                <div style={{
+                  padding: 16,
+                  backgroundColor: "#fef3c7",
+                  border: "1px solid #fcd34d",
+                  borderRadius: 8
+                }}>
+                  <div style={{ fontSize: 12, color: "#57606a" }}>Vulnerabilities</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: "#f59e0b" }}>
+                    {migrationJob.sonarqube_results.vulnerabilities || 0}
+                  </div>
+                </div>
+                <div style={{
+                  padding: 16,
+                  backgroundColor: "#dbeafe",
+                  border: "1px solid #93c5fd",
+                  borderRadius: 8
+                }}>
+                  <div style={{ fontSize: 12, color: "#57606a" }}>Code Smells</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: "#3b82f6" }}>
+                    {migrationJob.sonarqube_results.code_smells || 0}
+                  </div>
+                </div>
+                <div style={{
+                  padding: 16,
+                  backgroundColor: "#dcfce7",
+                  border: "1px solid #86efac",
+                  borderRadius: 8
+                }}>
+                  <div style={{ fontSize: 12, color: "#57606a" }}>Coverage</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: "#22c55e" }}>
+                    {migrationJob.sonarqube_results.coverage || "0"}%
+                  </div>
+                </div>
+              </div>
+              {migrationJob.sonarqube_results.quality_gate && (
+                <div style={{
+                  marginTop: 12,
+                  padding: 12,
+                  backgroundColor: migrationJob.sonarqube_results.quality_gate === 'PASSED' ? '#f0fdf4' : '#fee2e2',
+                  border: `1px solid ${migrationJob.sonarqube_results.quality_gate === 'PASSED' ? '#86efac' : '#fecaca'}`,
+                  borderRadius: 6
+                }}>
+                  <span style={{
+                    display: "inline-block",
+                    padding: "4px 8px",
+                    borderRadius: 4,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    backgroundColor: migrationJob.sonarqube_results.quality_gate === 'PASSED' ? '#dcfce7' : '#fee2e2',
+                    color: migrationJob.sonarqube_results.quality_gate === 'PASSED' ? '#166534' : '#991b1b'
+                  }}>
+                    Quality Gate: {migrationJob.sonarqube_results.quality_gate}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* FOSSA Results - Conditional Display */}
+          {runFossa && migrationJob.fossa_results && (
+            <div style={styles.reportSection}>
+              <h3 style={styles.reportTitle}>📜 FOSSA License & Dependency Scan</h3>
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                gap: 16
+              }}>
+                <div style={{
+                  padding: 16,
+                  backgroundColor: "#f0f4f8",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 8
+                }}>
+                  <div style={{ fontSize: 12, color: "#57606a" }}>Total Dependencies</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: "#334155" }}>
+                    {migrationJob.fossa_results.total_dependencies || 0}
+                  </div>
+                </div>
+                <div style={{
+                  padding: 16,
+                  backgroundColor: "#fef3c7",
+                  border: "1px solid #fcd34d",
+                  borderRadius: 8
+                }}>
+                  <div style={{ fontSize: 12, color: "#57606a" }}>License Issues</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: "#f59e0b" }}>
+                    {migrationJob.fossa_results.license_issues || 0}
+                  </div>
+                </div>
+                <div style={{
+                  padding: 16,
+                  backgroundColor: "#fee2e2",
+                  border: "1px solid #fecaca",
+                  borderRadius: 8
+                }}>
+                  <div style={{ fontSize: 12, color: "#57606a" }}>Security Vulnerabilities</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: "#ef4444" }}>
+                    {migrationJob.fossa_results.security_issues || 0}
+                  </div>
+                </div>
+                <div style={{
+                  padding: 16,
+                  backgroundColor: "#f3e8ff",
+                  border: "1px solid #e9d5ff",
+                  borderRadius: 8
+                }}>
+                  <div style={{ fontSize: 12, color: "#57606a" }}>SBOM Generated</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: "#a855f7" }}>
+                    {migrationJob.fossa_results.sbom_generated ? '✓' : '✗'}
+                  </div>
+                </div>
+              </div>
+              {migrationJob.fossa_results.compliance_status && (
+                <div style={{
+                  marginTop: 12,
+                  padding: 12,
+                  backgroundColor: migrationJob.fossa_results.compliance_status === 'COMPLIANT' ? '#f0fdf4' : '#fee2e2',
+                  border: `1px solid ${migrationJob.fossa_results.compliance_status === 'COMPLIANT' ? '#86efac' : '#fecaca'}`,
+                  borderRadius: 6
+                }}>
+                  <span style={{
+                    display: "inline-block",
+                    padding: "4px 8px",
+                    borderRadius: 4,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    backgroundColor: migrationJob.fossa_results.compliance_status === 'COMPLIANT' ? '#dcfce7' : '#fee2e2',
+                    color: migrationJob.fossa_results.compliance_status === 'COMPLIANT' ? '#166534' : '#991b1b'
+                  }}>
+                    Compliance Status: {migrationJob.fossa_results.compliance_status}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* GitLab-Style Code Changes Diff Viewer */}
           <div style={styles.reportSection}>
@@ -4522,6 +5288,7 @@ For questions or issues:
         {step === 2 && renderDiscoveryStep()}
         {step === 3 && renderStrategyStep()}
         {step === 4 && renderMigrationStep()}
+        {step === 4.5 && renderReviewStep()}
         {step === 5 && renderMigrationAnimation()}
         {step === 6 && renderMigrationProgress()}
         {step === 7 && renderStep11()}
