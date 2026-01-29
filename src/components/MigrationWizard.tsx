@@ -1484,8 +1484,6 @@ public class UserService {
                             </div>
                           )}
                         </div>
-                          )}
-                        </div>
                         
                         {/* Standard Structure Option */}
                         <div style={{ marginBottom: 16 }}>
