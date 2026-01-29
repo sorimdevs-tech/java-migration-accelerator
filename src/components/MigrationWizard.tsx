@@ -1258,44 +1258,127 @@ public class UserService {
                       }}>
                         <div style={{ fontWeight: 600, color: "#92400e", marginBottom: 12 }}>💡 Suggested Configuration:</div>
                         
-                        {/* Java Version Selection */}
+                        {/* Java Version Selection - Smart Detection */}
                         <div style={{ marginBottom: 16 }}>
                           <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "#78350f", marginBottom: 6 }}>
-                            Select Source Java Version:
+                            {repoAnalysis?.java_version && repoAnalysis?.java_version !== "unknown" 
+                              ? "✅ Source Java Version (Detected from pom.xml)" 
+                              : "Select Source Java Version:"}
                           </label>
-                          <select
-                            value={suggestedJavaVersion}
-                            onChange={(e) => {
-                              const selected = e.target.value;
-                              setSuggestedJavaVersion(selected);
-                              // Only set userSelectedVersion if not auto-detect
-                              if (selected !== "auto") {
-                                setSelectedSourceVersion(selected);
-                                setUserSelectedVersion(selected);
-                              } else {
-                                setUserSelectedVersion(null); // Clear user selection to use auto-detect
-                                setSelectedSourceVersion(repoAnalysis?.java_version || "8"); // Use detected or fallback
-                              }
-                              setSourceVersionStatus("detected");
-                            }}
-                            style={{
-                              padding: "10px 14px",
-                              borderRadius: 6,
-                              border: "1px solid #d97706",
-                              fontSize: 14,
-                              backgroundColor: "#fff",
-                              cursor: "pointer",
-                              minWidth: 200
-                            }}
-                          >
-                            <option value="auto">🔍 Auto-detect from code (Recommended)</option>
-                            {sourceVersions.map((v) => (
-                              <option key={v.value} value={v.value}>{v.label}</option>
-                            ))}
-                          </select>
-                          <div style={{ fontSize: 11, color: "#a16207", marginTop: 6 }}>
-                            💡 Auto-detect analyzes your code to determine the correct Java version
-                          </div>
+                          
+                          {/* Version Detected - Show with override option */}
+                          {repoAnalysis?.java_version && repoAnalysis?.java_version !== "unknown" ? (
+                            <div>
+                              <div style={{
+                                padding: "12px 14px",
+                                borderRadius: 6,
+                                border: "2px solid #10b981",
+                                backgroundColor: "#ecfdf5",
+                                fontSize: 14,
+                                fontWeight: 600,
+                                color: "#047857",
+                                marginBottom: 8,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8
+                              }}>
+                                <span>🎯</span>
+                                <span>Java {repoAnalysis.java_version}</span>
+                                <span style={{ fontSize: 12, fontWeight: 400, color: "#059669", marginLeft: "auto" }}>
+                                  Auto-detected
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  // Toggle between detected version and dropdown
+                                  setSuggestedJavaVersion(repoAnalysis.java_version === suggestedJavaVersion ? "override" : repoAnalysis.java_version);
+                                }}
+                                style={{
+                                  fontSize: 12,
+                                  color: "#d97706",
+                                  backgroundColor: "transparent",
+                                  border: "1px solid #d97706",
+                                  borderRadius: 4,
+                                  padding: "6px 12px",
+                                  cursor: "pointer",
+                                  fontWeight: 500,
+                                  transition: "all 0.2s"
+                                }}
+                              >
+                                🔄 Change Version
+                              </button>
+                              
+                              {/* Version Selector when user clicks "Change" */}
+                              {suggestedJavaVersion === "override" && (
+                                <select
+                                  value={suggestedJavaVersion === "override" ? repoAnalysis.java_version : suggestedJavaVersion}
+                                  onChange={(e) => {
+                                    const selected = e.target.value;
+                                    setSuggestedJavaVersion(selected);
+                                    if (selected !== "auto") {
+                                      setSelectedSourceVersion(selected);
+                                      setUserSelectedVersion(selected);
+                                    } else {
+                                      setUserSelectedVersion(null);
+                                      setSelectedSourceVersion(repoAnalysis?.java_version || "8");
+                                    }
+                                    setSourceVersionStatus("detected");
+                                  }}
+                                  style={{
+                                    marginTop: 10,
+                                    padding: "10px 14px",
+                                    borderRadius: 6,
+                                    border: "1px solid #fbbf24",
+                                    fontSize: 14,
+                                    backgroundColor: "#fff",
+                                    cursor: "pointer",
+                                    minWidth: "100%"
+                                  }}
+                                >
+                                  <option value="auto">🔍 Auto-detect from code (Recommended)</option>
+                                  {sourceVersions.map((v) => (
+                                    <option key={v.value} value={v.value}>{v.label}</option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+                          ) : (
+                            /* Version NOT Detected - Show dropdown for manual selection */
+                            <div>
+                              <select
+                                value={suggestedJavaVersion}
+                                onChange={(e) => {
+                                  const selected = e.target.value;
+                                  setSuggestedJavaVersion(selected);
+                                  if (selected !== "auto") {
+                                    setSelectedSourceVersion(selected);
+                                    setUserSelectedVersion(selected);
+                                  } else {
+                                    setUserSelectedVersion(null);
+                                    setSelectedSourceVersion(repoAnalysis?.java_version || "8");
+                                  }
+                                  setSourceVersionStatus("detected");
+                                }}
+                                style={{
+                                  padding: "10px 14px",
+                                  borderRadius: 6,
+                                  border: "1px solid #d97706",
+                                  fontSize: 14,
+                                  backgroundColor: "#fff",
+                                  cursor: "pointer",
+                                  minWidth: "100%"
+                                }}
+                              >
+                                <option value="auto">🔍 Auto-detect from code (Recommended)</option>
+                                {sourceVersions.map((v) => (
+                                  <option key={v.value} value={v.value}>{v.label}</option>
+                                ))}
+                              </select>
+                              <div style={{ fontSize: 11, color: "#ea580c", marginTop: 6, backgroundColor: "#fef3c7", padding: 8, borderRadius: 4 }}>
+                                ⚠️ Java version could not be auto-detected. Please select manually or choose "Auto-detect" to scan the code.
+                              </div>
+                            </div>
+                          )}
                         </div>
                         
                         {/* Standard Structure Option */}
