@@ -1258,16 +1258,121 @@ public class UserService {
                       }}>
                         <div style={{ fontWeight: 600, color: "#92400e", marginBottom: 12 }}>💡 Suggested Configuration:</div>
                         
-                        {/* Java Version Selection - Smart Detection */}
+                        {/* Java Version Selection - Strict Locking from Build Files */}
                         <div style={{ marginBottom: 16 }}>
                           <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "#78350f", marginBottom: 6 }}>
-                            {repoAnalysis?.java_version && repoAnalysis?.java_version !== "unknown" 
-                              ? "✅ Source Java Version (Detected from pom.xml)" 
+                            {(repoAnalysis as any)?.java_version_detected_from_build
+                              ? "🔒 Source Java Version (LOCKED from build file)" 
+                              : repoAnalysis?.java_version && repoAnalysis?.java_version !== "unknown"
+                              ? "✅ Source Java Version (Detected from code)"
                               : "Select Source Java Version:"}
                           </label>
                           
-                          {/* Version Detected - Show with override option */}
-                          {repoAnalysis?.java_version && repoAnalysis?.java_version !== "unknown" ? (
+                          {/* Version LOCKED from build file - Read-only */}
+                          {(repoAnalysis as any)?.java_version_detected_from_build ? (
+                            <div>
+                              <div style={{
+                                padding: "12px 14px",
+                                borderRadius: 6,
+                                border: "3px solid #dc2626",
+                                backgroundColor: "#fee2e2",
+                                fontSize: 14,
+                                fontWeight: 700,
+                                color: "#991b1b",
+                                marginBottom: 8,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8
+                              }}>
+                                <span>🔒</span>
+                                <span>Java {repoAnalysis.java_version}</span>
+                                <span style={{ fontSize: 12, fontWeight: 400, color: "#b91c1c", marginLeft: "auto" }}>
+                                  LOCKED
+                                </span>
+                              </div>
+                              <div style={{ 
+                                fontSize: 11, 
+                                color: "#991b1b", 
+                                backgroundColor: "#ffe4e4", 
+                                padding: 8, 
+                                borderRadius: 4,
+                                marginBottom: 8,
+                                border: "1px solid #fca5a5"
+                              }}>
+                                ✓ Java version is strictly defined in {repoAnalysis?.build_tool === "maven" ? "pom.xml" : "build.gradle"}.
+                                <br/>
+                                This version cannot be changed (enforced by build configuration).
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setSuggestedJavaVersion("force_override");
+                                }}
+                                style={{
+                                  fontSize: 11,
+                                  color: "#991b1b",
+                                  backgroundColor: "#fee2e2",
+                                  border: "1px solid #dc2626",
+                                  borderRadius: 4,
+                                  padding: "6px 12px",
+                                  cursor: "pointer",
+                                  fontWeight: 600,
+                                  transition: "all 0.2s"
+                                }}
+                              >
+                                ⚠️ Force Override (Use with caution)
+                              </button>
+                              
+                              {/* Force Override Selector - Only show on user request */}
+                              {suggestedJavaVersion === "force_override" && (
+                                <div style={{ marginTop: 10 }}>
+                                  <div style={{
+                                    backgroundColor: "#fee2e2",
+                                    border: "1px solid #dc2626",
+                                    borderRadius: 4,
+                                    padding: 8,
+                                    marginBottom: 8,
+                                    fontSize: 11,
+                                    color: "#991b1b"
+                                  }}>
+                                    ⚠️ WARNING: Overriding locked version may cause build failures!
+                                  </div>
+                                  <select
+                                    value={suggestedJavaVersion === "force_override" ? repoAnalysis.java_version : suggestedJavaVersion}
+                                    onChange={(e) => {
+                                      const selected = e.target.value;
+                                      setSuggestedJavaVersion(selected);
+                                      if (selected !== "auto") {
+                                        setSelectedSourceVersion(selected);
+                                        setUserSelectedVersion(selected);
+                                      } else {
+                                        setUserSelectedVersion(null);
+                                        setSelectedSourceVersion(repoAnalysis?.java_version || "8");
+                                      }
+                                      setSourceVersionStatus("detected");
+                                    }}
+                                    style={{
+                                      marginTop: 8,
+                                      padding: "10px 14px",
+                                      borderRadius: 6,
+                                      border: "2px solid #dc2626",
+                                      fontSize: 14,
+                                      backgroundColor: "#fff",
+                                      cursor: "pointer",
+                                      minWidth: "100%",
+                                      color: "#991b1b",
+                                      fontWeight: 600
+                                    }}
+                                  >
+                                    <option value="auto">🔍 Auto-detect from code</option>
+                                    {sourceVersions.map((v) => (
+                                      <option key={v.value} value={v.value}>{v.label}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+                          ) : repoAnalysis?.java_version && repoAnalysis?.java_version !== "unknown" ? (
+                            /* Version Detected from code analysis - With override option */
                             <div>
                               <div style={{
                                 padding: "12px 14px",
@@ -1285,12 +1390,11 @@ public class UserService {
                                 <span>🎯</span>
                                 <span>Java {repoAnalysis.java_version}</span>
                                 <span style={{ fontSize: 12, fontWeight: 400, color: "#059669", marginLeft: "auto" }}>
-                                  Auto-detected
+                                  Detected from code
                                 </span>
                               </div>
                               <button
                                 onClick={() => {
-                                  // Toggle between detected version and dropdown
                                   setSuggestedJavaVersion(repoAnalysis.java_version === suggestedJavaVersion ? "override" : repoAnalysis.java_version);
                                 }}
                                 style={{
@@ -1375,9 +1479,11 @@ public class UserService {
                                 ))}
                               </select>
                               <div style={{ fontSize: 11, color: "#ea580c", marginTop: 6, backgroundColor: "#fef3c7", padding: 8, borderRadius: 4 }}>
-                                ⚠️ Java version could not be auto-detected. Please select manually or choose "Auto-detect" to scan the code.
+                                ⚠️ Java version could not be detected. Please select manually or choose "Auto-detect" to scan the code.
                               </div>
                             </div>
+                          )}
+                        </div>
                           )}
                         </div>
                         
