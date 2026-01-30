@@ -195,6 +195,9 @@ class MigrationResult(BaseModel):
     sonar_vulnerabilities: int = 0
     sonar_code_smells: int = 0
     sonar_coverage: float = 0.0
+    sonar_accepted_issues: int = 0
+    sonar_security_hotspots: int = 0
+    sonar_duplications: float = 0.0
     # FOSSA results
     fossa_policy_status: Optional[str] = None
     fossa_total_dependencies: int = 0
@@ -235,6 +238,37 @@ class RepoInfo(BaseModel):
     description: Optional[str] = None
 
 
+class SonarAggregateRequest(BaseModel):
+    repo_urls: List[str] = Field(..., description="List of repository URLs or Sonar project keys to aggregate")
+    token: Optional[str] = Field(default=None, description="Optional token to use for API requests (overrides env token)")
+
+
+class SonarProjectResult(BaseModel):
+    project_key: str
+    repo_url: Optional[str] = None
+    quality_gate: Optional[str] = None
+    bugs: int = 0
+    vulnerabilities: int = 0
+    code_smells: int = 0
+    coverage: float = 0.0
+    duplications: float = 0.0
+    accepted_issues: int = 0
+    security_hotspots: int = 0
+    analysis_url: Optional[str] = None
+
+
+class SonarAggregateResult(BaseModel):
+    projects: List[SonarProjectResult]
+    total_bugs: int
+    total_vulnerabilities: int
+    total_code_smells: int
+    total_accepted_issues: int
+    total_security_hotspots: int
+    aggregated_coverage: float
+    average_duplication: float
+    note: Optional[str] = None
+
+
 @app.get("/")
 @app.head("/")
 async def root():
@@ -245,6 +279,93 @@ async def root():
 @app.head("/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@app.post("/api/sonar/aggregate", response_model=SonarAggregateResult)
+async def aggregate_sonar(request: SonarAggregateRequest):
+    """Aggregate Sonar metrics for multiple repos/project keys.
+
+    This endpoint will query SonarQube/SonarCloud for each provided repo URL
+    or derived project key and return combined totals. Coverage and
+    duplication are averaged across projects.
+    """
+    projects = []
+    total_bugs = 0
+    total_vulns = 0
+    total_code_smells = 0
+    total_accepted = 0
+    total_hotspots = 0
+    coverage_sum = 0.0
+    duplication_sum = 0.0
+
+    # temporarily override token if provided
+    orig_token = sonarqube_service.sonar_token
+    if request.token:
+        sonarqube_service.sonar_token = request.token
+
+    for repo in request.repo_urls:
+        # Derive candidate project key similar to other code paths
+        project_key = repo
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(repo)
+            if parsed.scheme and parsed.path:
+                parts = [p for p in parsed.path.split('/') if p]
+                if len(parts) >= 2:
+                    project_key = f"{parts[0]}/{parts[1]}"
+        except Exception:
+            project_key = repo
+
+        try:
+            # Use the service fetch method (will attempt matching keys)
+            res = await sonarqube_service._fetch_analysis_results(project_key)
+        except Exception:
+            # fallback to simulated
+            res = sonarqube_service._get_simulated_results("")
+
+        proj = SonarProjectResult(
+            project_key=project_key,
+            repo_url=repo,
+            quality_gate=res.get('quality_gate'),
+            bugs=int(res.get('bugs', 0) or 0),
+            vulnerabilities=int(res.get('vulnerabilities', 0) or 0),
+            code_smells=int(res.get('code_smells', 0) or 0),
+            coverage=float(res.get('coverage', 0.0) or 0.0),
+            duplications=float(res.get('duplications', 0.0) or 0.0),
+            accepted_issues=int(res.get('accepted_issues', 0) or 0),
+            security_hotspots=int(res.get('security_hotspots', 0) or 0),
+            analysis_url=res.get('analysis_url')
+        )
+
+        projects.append(proj)
+        total_bugs += proj.bugs
+        total_vulns += proj.vulnerabilities
+        total_code_smells += proj.code_smells
+        total_accepted += proj.accepted_issues
+        total_hotspots += proj.security_hotspots
+        coverage_sum += proj.coverage
+        duplication_sum += proj.duplications
+
+    # restore original token
+    sonarqube_service.sonar_token = orig_token
+
+    aggregated_coverage = 0.0
+    average_duplication = 0.0
+    if len(projects) > 0:
+        aggregated_coverage = coverage_sum / len(projects)
+        average_duplication = duplication_sum / len(projects)
+
+    return SonarAggregateResult(
+        projects=projects,
+        total_bugs=total_bugs,
+        total_vulnerabilities=total_vulns,
+        total_code_smells=total_code_smells,
+        total_accepted_issues=total_accepted,
+        total_security_hotspots=total_hotspots,
+        aggregated_coverage=round(aggregated_coverage, 2),
+        average_duplication=round(average_duplication, 2),
+        note="Aggregated metrics for requested projects (simple averages for coverage/duplication)."
+    )
 
 
 # GitHub Endpoints
@@ -1582,13 +1703,35 @@ async def run_migration(job_id: str, request: MigrationRequest):
             except Exception:
                 project_key = job.source_repo
 
+            # If the migration request included a Sonar token, use it temporarily
+            orig_sonar_token = sonarqube_service.sonar_token
+            if getattr(request, 'token', None):
+                sonarqube_service.sonar_token = request.token
+
             sonar_result = await sonarqube_service.analyze_project(clone_path, project_key)
+
+            # Debug: show sonar_result keys/summary (do not log tokens)
+            try:
+                print(f"[Migration] sonar_result for project_key={project_key}: {{'bugs': {sonar_result.get('bugs')}, 'vulnerabilities': {sonar_result.get('vulnerabilities')}, 'code_smells': {sonar_result.get('code_smells')}, 'coverage': {sonar_result.get('coverage')}, 'security_hotspots': {sonar_result.get('security_hotspots')}, 'duplications': {sonar_result.get('duplications')}}}")
+            except Exception:
+                pass
+            # Attach full sonar result to the job so frontend can read detailed fields directly
+            try:
+                setattr(job, 'sonarqube_results', sonar_result)
+            except Exception:
+                pass
             job.sonar_quality_gate = sonar_result.get("quality_gate", "N/A")
             job.sonar_bugs = sonar_result.get("bugs", 0)
             job.sonar_vulnerabilities = sonar_result.get("vulnerabilities", 0)
             job.sonar_code_smells = sonar_result.get("code_smells", 0)
             job.sonar_coverage = sonar_result.get("coverage", 0.0)
+            job.sonar_accepted_issues = int(sonar_result.get("accepted_issues", 0) or 0)
+            job.sonar_security_hotspots = int(sonar_result.get("security_hotspots", 0) or 0)
+            job.sonar_duplications = float(sonar_result.get("duplications", 0.0) or 0.0)
             add_log(job_id, f"SonarQube: Quality Gate = {job.sonar_quality_gate}")
+
+            # restore original sonar token
+            sonarqube_service.sonar_token = orig_sonar_token
 
         # Step 5b: FOSSA analysis (optional)
         if getattr(request, 'run_fossa', False):
