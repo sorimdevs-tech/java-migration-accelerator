@@ -1146,7 +1146,6 @@ public class UserService {
               {isJavaProject && (selectedRepo || repoUrl) && (
                 <div style={{ marginTop: 12, marginBottom: 16 }}>
                   <button
-                    style={{ padding: '10px 14px', borderRadius: 8, backgroundColor: '#3b82f6', color: '#fff', border: 'none', cursor: 'pointer' }}
                     onClick={async () => {
                       setFossaLoading(true);
                       setFossaResult(null);
@@ -4785,8 +4784,8 @@ public class UserService {
             <div style={styles.sonarqubeGrid}>
               <div style={styles.sonarqubeItem}>
                 <div style={styles.qualityGate}>
-                  <span style={{ ...styles.gateStatus, backgroundColor: migrationJob.sonar_quality_gate === "PASSED" ? "#22c55e" : "#22c55e" }}>
-                    {migrationJob.sonar_quality_gate || "N/A"}
+                  <span style={{ ...styles.gateStatus, backgroundColor: (migrationJob.sonarqube_results?.quality_gate ?? migrationJob.sonar_quality_gate) === "PASSED" ? "#22c55e" : "#22c55e" }}>
+                    {migrationJob.sonarqube_results?.quality_gate ?? migrationJob.sonar_quality_gate ?? "N/A"}
                   </span>
                   <span style={styles.gateLabel}>Quality Gate</span>
                 </div>
@@ -4794,7 +4793,7 @@ public class UserService {
               <div style={styles.sonarqubeItem}>
                 <div style={styles.coverageMeter}>
                   <div style={styles.coverageCircle}>
-                    <span style={styles.coveragePercent}>{migrationJob.sonar_coverage}%</span>
+                    <span style={styles.coveragePercent}>{(migrationJob.sonarqube_results?.coverage ?? migrationJob.sonar_coverage ?? "N/A") + '%'}</span>
                     <span style={styles.coverageLabel}>Coverage</span>
                   </div>
                 </div>
@@ -4802,22 +4801,40 @@ public class UserService {
             </div>
             <div style={styles.qualityMetrics}>
               <div style={styles.metricItem}>
-                <span style={{ ...styles.metricValue, color: migrationJob.sonar_bugs > 0 ? "#ef4444" : "#22c55e" }}>
-                  {migrationJob.sonar_bugs}
+                <span style={{ ...styles.metricValue, color: (migrationJob.sonarqube_results?.bugs ?? migrationJob.sonar_bugs) > 0 ? "#ef4444" : "#22c55e" }}>
+                  {migrationJob.sonarqube_results?.bugs ?? migrationJob.sonar_bugs ?? 0}
                 </span>
-                <span style={styles.metricLabel}>Bugs</span>
+                <span style={styles.metricLabel}>Reliability</span>
               </div>
               <div style={styles.metricItem}>
-                <span style={{ ...styles.metricValue, color: migrationJob.sonar_vulnerabilities > 0 ? "#ef4444" : "#22c55e" }}>
-                  {migrationJob.sonar_vulnerabilities}
+                <span style={{ ...styles.metricValue, color: (migrationJob.sonarqube_results?.vulnerabilities ?? migrationJob.sonar_vulnerabilities) > 0 ? "#ef4444" : "#22c55e" }}>
+                  {migrationJob.sonarqube_results?.vulnerabilities ?? migrationJob.sonar_vulnerabilities ?? 0}
                 </span>
-                <span style={styles.metricLabel}>Vulnerabilities</span>
+                <span style={styles.metricLabel}>Security</span>
               </div>
               <div style={styles.metricItem}>
-                <span style={{ ...styles.metricValue, color: migrationJob.sonar_code_smells > 0 ? "#f59e0b" : "#22c55e" }}>
-                  {migrationJob.sonar_code_smells}
+                <span style={{ ...styles.metricValue, color: (migrationJob.sonarqube_results?.code_smells ?? migrationJob.sonar_code_smells) > 0 ? "#f59e0b" : "#22c55e" }}>
+                  {migrationJob.sonarqube_results?.code_smells ?? migrationJob.sonar_code_smells ?? 0}
                 </span>
-                <span style={styles.metricLabel}>Code Smells</span>
+                <span style={styles.metricLabel}>Maintainability</span>
+              </div>
+              <div style={styles.metricItem}>
+                <span style={{ ...styles.metricValue, color: ((migrationJob.sonarqube_results?.accepted_issues ?? migrationJob.sonar_accepted_issues) ?? 0) > 0 ? "#f59e0b" : "#22c55e" }}>
+                  {migrationJob.sonarqube_results?.accepted_issues ?? migrationJob.sonar_accepted_issues ?? 0}
+                </span>
+                <span style={styles.metricLabel}>Accepted Issues</span>
+              </div>
+              <div style={styles.metricItem}>
+                <span style={{ ...styles.metricValue, color: ((migrationJob.sonarqube_results?.security_hotspots ?? migrationJob.sonar_security_hotspots) ?? 0) > 0 ? "#ef4444" : "#22c55e" }}>
+                  {migrationJob.sonarqube_results?.security_hotspots ?? migrationJob.sonar_security_hotspots ?? 0}
+                </span>
+                <span style={styles.metricLabel}>Security Hotspots</span>
+              </div>
+              <div style={styles.metricItem}>
+                <span style={{ ...styles.metricValue, color: ((migrationJob.sonarqube_results?.duplications ?? migrationJob.sonar_duplications) ?? 0) > 0 ? "#f59e0b" : "#22c55e" }}>
+                  {(migrationJob.sonarqube_results?.duplications ?? migrationJob.sonar_duplications ?? 0)}%
+                </span>
+                <span style={styles.metricLabel}>Duplications</span>
               </div>
             </div>
           </div>
@@ -5075,11 +5092,11 @@ migrationJob.dependencies.map(dep => `- **${dep.group_id}:${dep.artifact_id}** -
 
 | Metric | Value |
 |--------|-------|
-| Quality Gate | ${migrationJob.sonar_quality_gate || 'N/A'} |
-| Code Coverage | ${migrationJob.sonar_coverage}% |
-| Bugs | ${migrationJob.sonar_bugs} |
-| Vulnerabilities | ${migrationJob.sonar_vulnerabilities} |
-| Code Smells | ${migrationJob.sonar_code_smells} |
+| Quality Gate | ${migrationJob.sonarqube_results?.quality_gate ?? migrationJob.sonar_quality_gate ?? 'N/A'} |
+| Code Coverage | ${(migrationJob.sonarqube_results?.coverage ?? migrationJob.sonar_coverage ?? 0)}% |
+| Bugs | ${migrationJob.sonarqube_results?.bugs ?? migrationJob.sonar_bugs ?? 0} |
+| Vulnerabilities | ${migrationJob.sonarqube_results?.vulnerabilities ?? migrationJob.sonar_vulnerabilities ?? 0} |
+| Code Smells | ${migrationJob.sonarqube_results?.code_smells ?? migrationJob.sonar_code_smells ?? 0} |
 
 ---
 
