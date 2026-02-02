@@ -419,15 +419,9 @@ class SonarQubeService:
                             "maintainability_rating_letter": rating_letter(maintainability_rating_num),
                             "analysis_url": analysis_url
                         }
-                    except Exception:
-                        pass
+                except Exception:
+                    pass    
 
-            # Nothing found from the API attempts — return simulated results as a fallback
-            try:
-                print(f"[SonarService] no measures found for candidates={uniq_candidates}; returning simulated results")
-            except Exception:
-                pass
-            return self._get_simulated_results("")
     
     def _get_simulated_results(self, project_path: str) -> Dict[str, Any]:
         """Get simulated SonarQube results for PoC demonstration"""
