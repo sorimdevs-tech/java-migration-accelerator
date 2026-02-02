@@ -124,6 +124,13 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   const [userSelectedVersion, setUserSelectedVersion] = useState<string | null>(null);
   // Track if no version was detected/selected
   const [sourceVersionStatus, setSourceVersionStatus] = useState<"detected" | "not_selected" | "unknown">("unknown");
+
+  // Helper: consider a Java version "known" when it's a non-empty, meaningful string
+  const isJavaVersionKnown = (v: any) => {
+    if (!v || typeof v !== "string") return false;
+    const s = v.trim().toLowerCase();
+    return s.length > 0 && s !== "unknown" && s !== "version detection failed";
+  };
   // Info popup state
   const [showVersionInfoPopup, setShowVersionInfoPopup] = useState(false);
   
@@ -133,6 +140,7 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   // Time tracking for analysis
   const [analysisStartTime, setAnalysisStartTime] = useState<number | null>(null);
   const [analysisDuration, setAnalysisDuration] = useState<string>("0m 0s");
+  const [analysisCompleted, setAnalysisCompleted] = useState(false);
   
   // Build Modernization acknowledgment
   const [migrationConfigAcknowledged, setMigrationConfigAcknowledged] = useState(false);
@@ -246,11 +254,13 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
           setAnalysisDuration(`${minutes}m ${seconds}s`);
           
           setRepoAnalysis(analysis);
+          // mark completion so header timer remains paused/visible
+          setAnalysisCompleted(true);
           // Check if it's a Java project
           // Consider as Java project if any .java files are found (even if no build file or version is detected)
           const hasJavaIndicators = 
             (Array.isArray(analysis.java_files) && analysis.java_files.length > 0) ||
-            analysis.java_version !== "unknown" && analysis.java_version !== null ||
+            isJavaVersionKnown(analysis.java_version) ||
             analysis.build_tool === "maven" || analysis.build_tool === "gradle" ||
             analysis.structure?.has_pom_xml || analysis.structure?.has_build_gradle ||
             (analysis.dependencies && analysis.dependencies.length > 0);
@@ -259,7 +269,7 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
           // Check for high-risk project (no pom.xml/build.gradle AND unknown Java version)
           const hasBuildConfig = analysis.structure?.has_pom_xml || analysis.structure?.has_build_gradle || 
                                  analysis.build_tool === "maven" || analysis.build_tool === "gradle";
-          const hasKnownJavaVersion = analysis.java_version && analysis.java_version !== "unknown";
+          const hasKnownJavaVersion = isJavaVersionKnown(analysis.java_version);
           
           if (hasJavaIndicators && (!hasBuildConfig || !hasKnownJavaVersion)) {
             setIsHighRiskProject(true);
@@ -312,7 +322,7 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
           setDetectedFrameworks(uniqueFrameworks);
           
           // Auto-set source version based on analysis
-          if (analysis.java_version && analysis.java_version !== "unknown") {
+          if (isJavaVersionKnown(analysis.java_version)) {
             setSelectedSourceVersion(analysis.java_version);
           }
           const hasTests = analysis.has_tests;
@@ -321,10 +331,37 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
           else if (hasBuildTool) setRiskLevel("medium");
           else setRiskLevel("high");
         })
-        .catch((err) => setError(err.message || "Failed to analyze repository."))
+        .catch((err) => {
+          setError(err.message || "Failed to analyze repository.");
+          // stop live timer on failure and mark completed so a paused timer can be shown
+          setAnalysisStartTime(null);
+          setAnalysisCompleted(true);
+        })
         .finally(() => setLoading(false));
     }
   }, [step, selectedRepo, repoAnalysis, githubToken]);
+
+  // Live analysis timer: updates `analysisDuration` every second while analysis is running
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+    if (analysisStartTime && !repoAnalysis) {
+      interval = setInterval(() => {
+        const ms = Date.now() - analysisStartTime;
+        const minutes = Math.floor(ms / 60000);
+        const seconds = Math.floor((ms % 60000) / 1000);
+        setAnalysisDuration(`${minutes}m ${seconds}s`);
+      }, 1000);
+    } else if (analysisStartTime && repoAnalysis) {
+      // final duration - ensure it's set when analysis finishes
+      const ms = Date.now() - analysisStartTime;
+      const minutes = Math.floor(ms / 60000);
+      const seconds = Math.floor((ms % 60000) / 1000);
+      setAnalysisDuration(`${minutes}m ${seconds}s`);
+      // keep analysisStartTime intact for potential debugging; could clear if desired
+    }
+
+    return () => { if (interval) clearInterval(interval); };
+  }, [analysisStartTime, repoAnalysis]);
 
   useEffect(() => {
     if (step === 2 && selectedRepo) {
@@ -690,6 +727,9 @@ public class UserService {
     setCodeChanges([]);
     setSelectedDiffFile(null);
     setShowCodeChanges(true);
+    // reset analysis timer
+    setAnalysisStartTime(null);
+    setAnalysisDuration("0m 0s");
   };
 
   const renderStepIndicator = () => (
@@ -1053,6 +1093,26 @@ public class UserService {
           <h2 style={styles.title}>Repository Discovery & Dependencies</h2>
           <p style={styles.subtitle}>{MIGRATION_STEPS[1].summary}</p>
         </div>
+
+        {/* Right-aligned live timer in header (highlighted area) */}
+        {(analysisStartTime || analysisCompleted || (repoAnalysis && analysisDuration && analysisDuration !== "0m 0s")) && (
+          <div style={{ marginLeft: "auto", alignSelf: "center", display: "flex", gap: 8, alignItems: "center" }}>
+            {analysisStartTime && !repoAnalysis ? (
+              <div style={{ padding: "6px 10px", background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 8, color: "#92400e", fontSize: 13 }}>
+                ⏳ Analyzing — {analysisDuration}
+              </div>
+            ) : repoAnalysis ? (
+              <div style={{ padding: "6px 10px", background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 8, color: "#0369a1", fontSize: 13 }}>
+                ⏱️ Completed — {analysisDuration}
+              </div>
+            ) : (
+              // analysisCompleted true but no repoAnalysis (paused/failed)
+              <div style={{ padding: "6px 10px", background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 8, color: "#92400e", fontSize: 13 }}>
+                ✅ Analysis completed — {analysisDuration}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {selectedRepo && (
@@ -1215,7 +1275,7 @@ public class UserService {
                               <span>❌</span> No pom.xml or build.gradle
                             </div>
                           )}
-                          {(!repoAnalysis?.java_version || repoAnalysis?.java_version === "unknown") && (
+                          {!isJavaVersionKnown(repoAnalysis?.java_version) && (
                             <div style={{
                               background: "#fef2f2",
                               border: "1px solid #fecaca",
@@ -1262,7 +1322,7 @@ public class UserService {
                           <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "#78350f", marginBottom: 6 }}>
                             {(repoAnalysis as any)?.java_version_detected_from_build
                               ? "🔒 Source Java Version (LOCKED from build file)" 
-                              : repoAnalysis?.java_version && repoAnalysis?.java_version !== "unknown"
+                              : isJavaVersionKnown(repoAnalysis?.java_version)
                               ? "✅ Source Java Version (Detected from code)"
                               : "Select Source Java Version:"}
                           </label>
@@ -1605,7 +1665,26 @@ public class UserService {
                   {(!isHighRiskProject || highRiskConfirmed) && (
                     <>
                       {/* Analysis Duration Info */}
-                      {analysisDuration && analysisDuration !== "0m 0s" && (
+                      {analysisStartTime && !repoAnalysis && (
+                        <div style={{
+                          padding: 12,
+                          backgroundColor: "#fff7ed",
+                          border: "1px solid #fcd34d",
+                          borderRadius: 8,
+                          marginBottom: 16,
+                          fontSize: 13,
+                          color: "#92400e",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8
+                        }}>
+                          <span>⏳</span>
+                          <span>Analyzing repository — elapsed <strong>{analysisDuration}</strong></span>
+                        </div>
+                      )}
+
+
+                      {repoAnalysis && analysisDuration && analysisDuration !== "0m 0s" && (
                         <div style={{
                           padding: 12,
                           backgroundColor: "#e0f2fe",
@@ -2228,7 +2307,7 @@ public class UserService {
             <div style={styles.discoveryItem}>
               <span style={styles.discoveryIcon}>☕</span>
               <div>
-                <div style={styles.discoveryTitle}>Java Version: {repoAnalysis.java_version || "Version Detection Failed"}</div>
+                <div style={styles.discoveryTitle}>Java Version: {isJavaVersionKnown(repoAnalysis?.java_version) ? repoAnalysis.java_version : "Unknown"}</div>
                 <div style={styles.discoveryDesc}>Current Java version detected in the project</div>
               </div>
             </div>
@@ -2311,7 +2390,7 @@ public class UserService {
 
           <div style={styles.assessmentGrid}>
             <div style={styles.assessmentItem}><div style={styles.assessmentLabel}>Build Tool</div><div style={styles.assessmentValue}>{repoAnalysis.build_tool || "Not Detected"}</div></div>
-                <div style={styles.assessmentItem}><div style={styles.assessmentLabel}>Java Version</div><div style={styles.assessmentValue}>{repoAnalysis.java_version || "Version Detection Failed"}</div></div>
+                <div style={styles.assessmentItem}><div style={styles.assessmentLabel}>Java Version</div><div style={styles.assessmentValue}>{isJavaVersionKnown(repoAnalysis?.java_version) ? repoAnalysis.java_version : "Unknown"}</div></div>
             <div style={styles.assessmentItem}><div style={styles.assessmentLabel}>Has Tests</div><div style={styles.assessmentValue}>{repoAnalysis.has_tests ? "Yes" : "No"}</div></div>
             <div style={styles.assessmentItem}><div style={styles.assessmentLabel}>Dependencies</div><div style={styles.assessmentValue}>{repoAnalysis.dependencies?.length || 0} found</div></div>
           </div>
