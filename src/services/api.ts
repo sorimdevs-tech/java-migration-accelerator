@@ -112,6 +112,27 @@ export interface MigrationResult {
   sonar_vulnerabilities: number;
   sonar_code_smells: number;
   sonar_coverage: number;
+  sonar_accepted_issues?: number;
+  sonar_security_hotspots?: number;
+  sonar_duplications?: number;
+  // Full SonarQube/SonarCloud aggregated result (newer API shape)
+  sonarqube_results?: {
+    quality_gate?: string | null;
+    bugs?: number;
+    vulnerabilities?: number;
+    code_smells?: number;
+    coverage?: number;
+    duplications?: number;
+    accepted_issues?: number;
+    security_hotspots?: number;
+    reliability_rating?: number;
+    security_rating?: number;
+    maintainability_rating?: number;
+    reliability_rating_letter?: string;
+    security_rating_letter?: string;
+    maintainability_rating_letter?: string;
+    analysis_url?: string | null;
+  };
   // FOSSA scan results (optional)
   fossa_policy_status?: string | null;
   fossa_total_dependencies?: number;
@@ -381,5 +402,33 @@ export async function analyzeFossaForRepo(repoUrl: string, token: string = ""): 
     const err = await response.json().catch(() => ({}));
     throw new Error(err.detail || 'Failed to run FOSSA analyze');
   }
+  return response.json();
+}
+
+// Aggregate Sonar metrics for multiple repositories or project keys
+export async function aggregateSonar(repoUrls: string[], token: string = ""):
+  Promise<{
+    projects: any[];
+    total_bugs: number;
+    total_vulnerabilities: number;
+    total_code_smells: number;
+    total_accepted_issues: number;
+    total_security_hotspots: number;
+    aggregated_coverage: number;
+    average_duplication: number;
+    note?: string | null;
+  }>
+{
+  const response = await fetch(`${API_BASE_URL}/sonar/aggregate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repo_urls: repoUrls, token })
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to aggregate Sonar metrics');
+  }
+
   return response.json();
 }

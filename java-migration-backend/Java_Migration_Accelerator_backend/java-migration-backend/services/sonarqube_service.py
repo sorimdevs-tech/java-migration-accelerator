@@ -88,7 +88,7 @@ class SonarQubeService:
             print(f"SonarQube/SonarCloud analysis error: {e}")
             import traceback
             print(f"Traceback: {traceback.format_exc()}")
-            result = self._get_simulated_results(project_path)
+            # result = self._get_simulated_results(project_path)
 
         return result
     
@@ -115,30 +115,120 @@ class SonarQubeService:
                         uniq_candidates.append(c)
 
                 response = None
-                auth = (self.sonar_token, "") if self.sonar_token else None
+                # Use explicit BasicAuth for clarity with httpx
+                auth = httpx.BasicAuth(self.sonar_token, "") if self.sonar_token else None
+                # If SonarCloud + org configured, try to discover project key via projects search
+                is_sonarcloud = "sonarcloud.io" in self.sonar_url
+                if is_sonarcloud and self.sonar_org:
+                    try:
+                        repo_guess = project_key.split('/')[-1] if '/' in project_key else project_key
+                        search_resp = await client.get(
+                            f"{self.sonar_url}/api/projects/search",
+                            params={"organization": self.sonar_org, "q": repo_guess},
+                            auth=auth
+                        )
+                        if search_resp.status_code == 200:
+                            sdata = search_resp.json()
+                            comps = sdata.get('components') or sdata.get('projects') or []
+                            print(f"[SonarService] projects/search returned {len(comps)} components for q={repo_guess}")
+                            if comps:
+                                found = comps[0]
+                                found_key = found.get('key') or found.get('projectKey') or found.get('id')
+                                if found_key:
+                                    project_key = found_key
+                    except Exception:
+                        pass
+
+                # Also include org-prefixed candidate forms to match SonarCloud project keys
+                if self.sonar_org and '/' in project_key:
+                    _, repo = project_key.split('/', 1)
+                    org_candidates = [f"{self.sonar_org}:{repo}", f"{self.sonar_org}_{repo}", f"{self.sonar_org}-{repo}", f"{self.sonar_org}/{repo}"]
+                    for oc in org_candidates:
+                        if oc not in uniq_candidates:
+                            uniq_candidates.append(oc)
+
+                # Try each candidate project key until we get a component with measures
                 for comp in uniq_candidates:
                     try:
-                        response = await client.get(
+                        print(f"[SonarService] trying component={comp}")
+                        resp = await client.get(
                             f"{self.sonar_url}/api/measures/component",
                             params={
                                 "component": comp,
-                                "metricKeys": "bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density"
+                                # include rating metrics so UI can render A/B/C ratings dynamically
+                                "metricKeys": "bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density,false_positive_issues,security_hotspots,reliability_rating,security_rating,maintainability_rating"
                             },
-                            auth=auth
+                            auth=auth,
                         )
-                        if response.status_code == 200 and response.json().get('component'):
+
+                        if resp is None:
+                            continue
+
+                        comp_present = False
+                        try:
+                            j = resp.json()
+                            comp_present = bool(j.get('component'))
+                        except Exception:
+                            j = None
+
+                        if resp.status_code != 200 or not comp_present:
+                            snippet = (resp.text or '')[:800]
+                            print(f"[SonarService] candidate={comp} status={resp.status_code} comp_present={comp_present} snippet={snippet}")
+
+                        if resp.status_code == 200 and comp_present:
+                            response = resp
                             project_key = comp
                             break
-                    except Exception:
+                    except Exception as ex:
+                        print(f"[SonarService] error requesting measures for {comp}: {ex}")
                         response = None
                         continue
                 
+                # If no valid response from candidates, try a more generic project search (no org)
+                if (not response or response.status_code != 200) and not is_sonarcloud:
+                    try:
+                        repo_guess = project_key.split('/')[-1] if '/' in project_key else project_key
+                        search_resp = await client.get(f"{self.sonar_url}/api/projects/search", params={"q": repo_guess}, auth=auth)
+                        if search_resp.status_code == 200:
+                            sdata = search_resp.json()
+                            comps = sdata.get('components') or sdata.get('projects') or []
+                            print(f"[SonarService] generic projects/search returned {len(comps)} components for q={repo_guess}")
+                            if comps:
+                                found = comps[0]
+                                found_key = found.get('key') or found.get('projectKey') or found.get('id')
+                                if found_key:
+                                    print(f"[SonarService] discovered project key via search: {found_key}")
+                                    resp2 = await client.get(
+                                        f"{self.sonar_url}/api/measures/component",
+                                        params={"component": found_key, "metricKeys": "bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density,false_positive_issues,security_hotspots,reliability_rating,security_rating,maintainability_rating"},
+                                        auth=auth,
+                                    )
+                                    if resp2.status_code == 200:
+                                        try:
+                                            j2 = resp2.json()
+                                            if j2.get('component'):
+                                                response = resp2
+                                                project_key = found_key
+                                        except Exception:
+                                            pass
+                                    else:
+                                        snippet = (resp2.text or '')[:800]
+                                        print(f"[SonarService] discovered={found_key} measures status={resp2.status_code} snippet={snippet}")
+                    except Exception:
+                        pass
+
                 if response and response.status_code == 200:
                     data = response.json()
                     measures = {m["metric"]: m.get("value", "0") for m in data.get("component", {}).get("measures", [])}
 
                     # Get actual quality gate status
                     quality_gate = await self.get_quality_gate_status(project_key)
+
+                    # Debug: log which project key was used and which measures were returned
+                    try:
+                        print(f"[SonarService] project_key={project_key} measures_keys={list(measures.keys())}")
+                    except Exception:
+                        pass
 
                     def to_int(v: Optional[str]) -> int:
                         try:
@@ -152,14 +242,83 @@ class SonarQubeService:
                         except Exception:
                             return 0.0
 
+                    # Compose analysis URL that better matches SonarCloud organization layout when available
+                    if is_sonarcloud and self.sonar_org:
+                        analysis_url = f"{self.sonar_url}/organization/{self.sonar_org}/dashboard?id={project_key}"
+                    else:
+                        analysis_url = f"{self.sonar_url}/dashboard?id={project_key}"
+
+                    # Primary values from measures
+                    bugs_val = to_int(measures.get("bugs"))
+                    vulns_val = to_int(measures.get("vulnerabilities"))
+                    smells_val = to_int(measures.get("code_smells"))
+                    hotspots_val = to_int(measures.get("security_hotspots"))
+                    # Ratings (Sonar uses 1..5 where 1==A, 5==E)
+                    reliability_rating_num = to_int(measures.get("reliability_rating"))
+                    security_rating_num = to_int(measures.get("security_rating"))
+                    maintainability_rating_num = to_int(measures.get("maintainability_rating"))
+
+                    def rating_letter(n: int) -> str:
+                        return {1: 'A', 2: 'B', 3: 'C', 4: 'D', 5: 'E'}.get(n, 'N/A')
+
+                    # If measures returned zeros or missing values, fall back to issues search API
+                    async def _count_issues(issue_type: str) -> int:
+                        try:
+                            r = await client.get(
+                                f"{self.sonar_url}/api/issues/search",
+                                params={"componentKeys": project_key, "types": issue_type, "resolved": "false", "ps": 1},
+                                auth=auth
+                            )
+                            if r.status_code == 200:
+                                j = r.json()
+                                return int(j.get("total", 0) or 0)
+                        except Exception:
+                            pass
+                        return 0
+
+                    async def _count_hotspots() -> int:
+                        try:
+                            r = await client.get(
+                                f"{self.sonar_url}/api/hotspots/search",
+                                params={"projectKey": project_key, "ps": 1},
+                                auth=auth
+                            )
+                            if r.status_code == 200:
+                                j = r.json()
+                                return int(j.get("total", 0) or 0)
+                        except Exception:
+                            pass
+                        return 0
+
+                    # Use issues search only when measures are absent or zero (helpful when measures endpoint is restricted)
+                    if bugs_val == 0:
+                        bugs_val = await _count_issues("BUG")
+                    if vulns_val == 0:
+                        vulns_val = await _count_issues("VULNERABILITY")
+                    if smells_val == 0:
+                        smells_val = await _count_issues("CODE_SMELL")
+                    if hotspots_val == 0:
+                        hotspots_val = await _count_hotspots()
+                    try:
+                        print(f"[SonarService] fallbacks: bugs={bugs_val} vulns={vulns_val} smells={smells_val} hotspots={hotspots_val}")
+                    except Exception:
+                        pass
                     return {
                         "quality_gate": quality_gate,
-                        "bugs": to_int(measures.get("bugs")),
-                        "vulnerabilities": to_int(measures.get("vulnerabilities")),
-                        "code_smells": to_int(measures.get("code_smells")),
+                        "bugs": bugs_val,
+                        "vulnerabilities": vulns_val,
+                        "code_smells": smells_val,
                         "coverage": to_float(measures.get("coverage")),
                         "duplications": to_float(measures.get("duplicated_lines_density")),
-                        "analysis_url": f"{self.sonar_url}/dashboard?id={project_key}"
+                        "accepted_issues": to_int(measures.get("false_positive_issues") or measures.get("accepted_issues")),
+                        "security_hotspots": hotspots_val,
+                        "reliability_rating": reliability_rating_num,
+                        "security_rating": security_rating_num,
+                        "maintainability_rating": maintainability_rating_num,
+                        "reliability_rating_letter": rating_letter(reliability_rating_num),
+                        "security_rating_letter": rating_letter(security_rating_num),
+                        "maintainability_rating_letter": rating_letter(maintainability_rating_num),
+                        "analysis_url": analysis_url
                     }
                     
             except Exception as e:
@@ -170,13 +329,15 @@ class SonarQubeService:
                         f"{self.sonar_url}/api/measures/component",
                         params={
                             "component": project_key,
-                            "metricKeys": "bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density"
+                            "metricKeys": "bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density,false_positive_issues,security_hotspots,reliability_rating,security_rating,maintainability_rating"
                         }
                     )
                     if response.status_code == 200:
                         data = response.json()
                         measures = {m["metric"]: m.get("value", "0") for m in data.get("component", {}).get("measures", [])}
                         quality_gate = await self.get_quality_gate_status(project_key)
+
+                        print(f"[SonarService] unauthenticated measures keys={list(measures.keys())} for project_key={project_key}")
 
                         def to_int(v: Optional[str]) -> int:
                             try:
@@ -190,19 +351,77 @@ class SonarQubeService:
                             except Exception:
                                 return 0.0
 
+                        if is_sonarcloud and self.sonar_org:
+                            analysis_url = f"{self.sonar_url}/organization/{self.sonar_org}/dashboard?id={project_key}"
+                        else:
+                            analysis_url = f"{self.sonar_url}/dashboard?id={project_key}"
+
+                        bugs_val = to_int(measures.get("bugs"))
+                        vulns_val = to_int(measures.get("vulnerabilities"))
+                        smells_val = to_int(measures.get("code_smells"))
+                        hotspots_val = to_int(measures.get("security_hotspots"))
+                        reliability_rating_num = to_int(measures.get("reliability_rating"))
+                        security_rating_num = to_int(measures.get("security_rating"))
+                        maintainability_rating_num = to_int(measures.get("maintainability_rating"))
+
+                        def rating_letter(n: int) -> str:
+                            return {1: 'A', 2: 'B', 3: 'C', 4: 'D', 5: 'E'}.get(n, 'N/A')
+
+                        async def _count_issues_noauth(issue_type: str) -> int:
+                            try:
+                                r = await client.get(
+                                    f"{self.sonar_url}/api/issues/search",
+                                    params={"componentKeys": project_key, "types": issue_type, "resolved": "false", "ps": 1}
+                                )
+                                if r.status_code == 200:
+                                    j = r.json()
+                                    return int(j.get("total", 0) or 0)
+                            except Exception:
+                                pass
+                            return 0
+
+                        async def _count_hotspots_noauth() -> int:
+                            try:
+                                r = await client.get(
+                                    f"{self.sonar_url}/api/hotspots/search",
+                                    params={"projectKey": project_key, "ps": 1}
+                                )
+                                if r.status_code == 200:
+                                    j = r.json()
+                                    return int(j.get("total", 0) or 0)
+                            except Exception:
+                                pass
+                            return 0
+
+                        if bugs_val == 0:
+                            bugs_val = await _count_issues_noauth("BUG")
+                        if vulns_val == 0:
+                            vulns_val = await _count_issues_noauth("VULNERABILITY")
+                        if smells_val == 0:
+                            smells_val = await _count_issues_noauth("CODE_SMELL")
+                        if hotspots_val == 0:
+                            hotspots_val = await _count_hotspots_noauth()
+
                         return {
                             "quality_gate": quality_gate,
-                            "bugs": to_int(measures.get("bugs")),
-                            "vulnerabilities": to_int(measures.get("vulnerabilities")),
-                            "code_smells": to_int(measures.get("code_smells")),
+                            "bugs": bugs_val,
+                            "vulnerabilities": vulns_val,
+                            "code_smells": smells_val,
                             "coverage": to_float(measures.get("coverage")),
                             "duplications": to_float(measures.get("duplicated_lines_density")),
-                            "analysis_url": f"{self.sonar_url}/dashboard?id={project_key}"
+                            "accepted_issues": to_int(measures.get("false_positive_issues") or measures.get("accepted_issues")),
+                            "security_hotspots": hotspots_val,
+                            "reliability_rating": reliability_rating_num,
+                            "security_rating": security_rating_num,
+                            "maintainability_rating": maintainability_rating_num,
+                            "reliability_rating_letter": rating_letter(reliability_rating_num),
+                            "security_rating_letter": rating_letter(security_rating_num),
+                            "maintainability_rating_letter": rating_letter(maintainability_rating_num),
+                            "analysis_url": analysis_url
                         }
                 except Exception:
-                    pass
-        
-        return self._get_simulated_results("")
+                    pass    
+
     
     def _get_simulated_results(self, project_path: str) -> Dict[str, Any]:
         """Get simulated SonarQube results for PoC demonstration"""
@@ -250,7 +469,16 @@ class SonarQubeService:
             "code_smells": java_files * 2,
             "coverage": round(coverage, 1),
             "duplications": round(max(0.0, 5.0 - java_files * 0.05), 1),
-            "analysis_url": None
+            "accepted_issues": 0,
+            "security_hotspots": 0,
+            "analysis_url": None,
+            # Simulated ratings (1..5) and letters for UI when real metrics unavailable
+            "reliability_rating": 1 if java_files < 20 else (2 if java_files < 50 else 3),
+            "security_rating": 1 if java_files < 20 else (2 if java_files < 50 else 3),
+            "maintainability_rating": 2 if java_files < 30 else 3,
+            "reliability_rating_letter": 'A' if java_files < 20 else ('B' if java_files < 50 else 'C'),
+            "security_rating_letter": 'A' if java_files < 20 else ('B' if java_files < 50 else 'C'),
+            "maintainability_rating_letter": 'B' if java_files < 30 else 'C'
         }
     
     async def get_quality_gate_status(self, project_key: str) -> str:

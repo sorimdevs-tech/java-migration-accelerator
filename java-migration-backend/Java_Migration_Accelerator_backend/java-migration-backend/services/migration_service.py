@@ -289,19 +289,34 @@ class MigrationService:
         source = int(source_version)
         target = int(target_version)
         
-        # Build migration path
+        # Build migration path - comprehensive support from Java 1 to latest
+        
+        # Java 1-5 → 6+ migrations
+        if source <= 5 and target >= 6:
+            recipes.append("org.openrewrite.java.migrate.AddOverride")
+            recipes.append("org.openrewrite.java.migrate.RemoveUnnecessarySemicolonBetweenImports")
+        
+        # Java 6 → 7+ migrations
+        if source <= 6 and target >= 7:
+            recipes.append("org.openrewrite.java.migrate.RemoveUnnecessarySemicolonBetweenImports")
+        
+        # Java 7 → 8+ migrations
         if source <= 7 and target >= 8:
             recipes.append("org.openrewrite.java.migrate.Java8TypeAnnotations")
             recipes.append("org.openrewrite.java.migrate.cobertura.RemoveCoberturaMavenPlugin")
+            recipes.append("org.openrewrite.java.migrate.Java8AddLambdas")
         
+        # Java 8 → 11+ migrations (javax → Jakarta will come later)
         if source <= 8 and target >= 11:
             recipes.append("org.openrewrite.java.migrate.javax.AddJaxbDependencies")
             recipes.append("org.openrewrite.java.migrate.javax.AddJaxwsDependencies")
         
+        # Java 11 → 17+ migrations
         if source <= 11 and target >= 17:
             recipes.append("org.openrewrite.java.migrate.UpgradeToJava17")
         
-        if target >= 21:
+        # Java 17+ → 21+ migrations
+        if source <= 17 and target >= 21:
             recipes.append("org.openrewrite.java.migrate.UpgradeToJava21")
         
         # Always add these

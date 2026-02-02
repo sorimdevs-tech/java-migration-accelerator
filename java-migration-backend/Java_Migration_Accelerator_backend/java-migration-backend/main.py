@@ -68,12 +68,29 @@ migration_jobs = {}
 
 
 class JavaVersion(str, Enum):
+    JAVA_1 = "1"
+    JAVA_2 = "2"
+    JAVA_3 = "3"
+    JAVA_4 = "4"
+    JAVA_5 = "5"
+    JAVA_6 = "6"
     JAVA_7 = "7"
     JAVA_8 = "8"
+    JAVA_9 = "9"
+    JAVA_10 = "10"
     JAVA_11 = "11"
+    JAVA_12 = "12"
+    JAVA_13 = "13"
+    JAVA_14 = "14"
+    JAVA_15 = "15"
+    JAVA_16 = "16"
     JAVA_17 = "17"
     JAVA_18 = "18"
+    JAVA_19 = "19"
+    JAVA_20 = "20"
     JAVA_21 = "21"
+    JAVA_22 = "22"
+    JAVA_23 = "23"
 
 
 class ConversionType(str, Enum):
@@ -178,6 +195,9 @@ class MigrationResult(BaseModel):
     sonar_vulnerabilities: int = 0
     sonar_code_smells: int = 0
     sonar_coverage: float = 0.0
+    sonar_accepted_issues: int = 0
+    sonar_security_hotspots: int = 0
+    sonar_duplications: float = 0.0
     # FOSSA results
     fossa_policy_status: Optional[str] = None
     fossa_total_dependencies: int = 0
@@ -192,6 +212,21 @@ class MigrationResult(BaseModel):
     total_warnings: int = 0
     errors_fixed: int = 0
     warnings_fixed: int = 0
+    # Phase timings
+    connection_duration: str = "0m 0s"
+    discovery_duration: str = "0m 0s"
+    strategy_duration: str = "0m 0s"
+    migration_duration: str = "0m 0s"
+    total_duration: str = "0m 0s"
+    # Internal timestamp tracking
+    connection_start: Optional[datetime] = None
+    connection_end: Optional[datetime] = None
+    discovery_start: Optional[datetime] = None
+    discovery_end: Optional[datetime] = None
+    strategy_start: Optional[datetime] = None
+    strategy_end: Optional[datetime] = None
+    migration_start: Optional[datetime] = None
+    migration_end: Optional[datetime] = None
 
 
 class RepoInfo(BaseModel):
@@ -201,6 +236,37 @@ class RepoInfo(BaseModel):
     default_branch: str
     language: Optional[str] = None
     description: Optional[str] = None
+
+
+class SonarAggregateRequest(BaseModel):
+    repo_urls: List[str] = Field(..., description="List of repository URLs or Sonar project keys to aggregate")
+    token: Optional[str] = Field(default=None, description="Optional token to use for API requests (overrides env token)")
+
+
+class SonarProjectResult(BaseModel):
+    project_key: str
+    repo_url: Optional[str] = None
+    quality_gate: Optional[str] = None
+    bugs: int = 0
+    vulnerabilities: int = 0
+    code_smells: int = 0
+    coverage: float = 0.0
+    duplications: float = 0.0
+    accepted_issues: int = 0
+    security_hotspots: int = 0
+    analysis_url: Optional[str] = None
+
+
+class SonarAggregateResult(BaseModel):
+    projects: List[SonarProjectResult]
+    total_bugs: int
+    total_vulnerabilities: int
+    total_code_smells: int
+    total_accepted_issues: int
+    total_security_hotspots: int
+    aggregated_coverage: float
+    average_duplication: float
+    note: Optional[str] = None
 
 
 @app.get("/")
@@ -213,6 +279,93 @@ async def root():
 @app.head("/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@app.post("/api/sonar/aggregate", response_model=SonarAggregateResult)
+async def aggregate_sonar(request: SonarAggregateRequest):
+    """Aggregate Sonar metrics for multiple repos/project keys.
+
+    This endpoint will query SonarQube/SonarCloud for each provided repo URL
+    or derived project key and return combined totals. Coverage and
+    duplication are averaged across projects.
+    """
+    projects = []
+    total_bugs = 0
+    total_vulns = 0
+    total_code_smells = 0
+    total_accepted = 0
+    total_hotspots = 0
+    coverage_sum = 0.0
+    duplication_sum = 0.0
+
+    # temporarily override token if provided
+    orig_token = sonarqube_service.sonar_token
+    if request.token:
+        sonarqube_service.sonar_token = request.token
+
+    for repo in request.repo_urls:
+        # Derive candidate project key similar to other code paths
+        project_key = repo
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(repo)
+            if parsed.scheme and parsed.path:
+                parts = [p for p in parsed.path.split('/') if p]
+                if len(parts) >= 2:
+                    project_key = f"{parts[0]}/{parts[1]}"
+        except Exception:
+            project_key = repo
+
+        try:
+            # Use the service fetch method (will attempt matching keys)
+            res = await sonarqube_service._fetch_analysis_results(project_key)
+        except Exception:
+            # fallback to simulated
+            res = sonarqube_service._get_simulated_results("")
+
+        proj = SonarProjectResult(
+            project_key=project_key,
+            repo_url=repo,
+            quality_gate=res.get('quality_gate'),
+            bugs=int(res.get('bugs', 0) or 0),
+            vulnerabilities=int(res.get('vulnerabilities', 0) or 0),
+            code_smells=int(res.get('code_smells', 0) or 0),
+            coverage=float(res.get('coverage', 0.0) or 0.0),
+            duplications=float(res.get('duplications', 0.0) or 0.0),
+            accepted_issues=int(res.get('accepted_issues', 0) or 0),
+            security_hotspots=int(res.get('security_hotspots', 0) or 0),
+            analysis_url=res.get('analysis_url')
+        )
+
+        projects.append(proj)
+        total_bugs += proj.bugs
+        total_vulns += proj.vulnerabilities
+        total_code_smells += proj.code_smells
+        total_accepted += proj.accepted_issues
+        total_hotspots += proj.security_hotspots
+        coverage_sum += proj.coverage
+        duplication_sum += proj.duplications
+
+    # restore original token
+    sonarqube_service.sonar_token = orig_token
+
+    aggregated_coverage = 0.0
+    average_duplication = 0.0
+    if len(projects) > 0:
+        aggregated_coverage = coverage_sum / len(projects)
+        average_duplication = duplication_sum / len(projects)
+
+    return SonarAggregateResult(
+        projects=projects,
+        total_bugs=total_bugs,
+        total_vulnerabilities=total_vulns,
+        total_code_smells=total_code_smells,
+        total_accepted_issues=total_accepted,
+        total_security_hotspots=total_hotspots,
+        aggregated_coverage=round(aggregated_coverage, 2),
+        average_duplication=round(average_duplication, 2),
+        note="Aggregated metrics for requested projects (simple averages for coverage/duplication)."
+    )
 
 
 # GitHub Endpoints
@@ -1304,8 +1457,14 @@ def calculate_duration(start_time, end_time):
 # Version and Recipe Endpoints
 @app.get("/api/java-versions")
 async def get_java_versions():
-    """Get supported Java versions for migration"""
+    """Get supported Java versions for migration (from Java 1 to latest)"""
     all_versions = [
+        {"value": "1", "label": "Java 1 (Legacy)"},
+        {"value": "2", "label": "Java 2 (Legacy)"},
+        {"value": "3", "label": "Java 3 (Legacy)"},
+        {"value": "4", "label": "Java 4 (Legacy)"},
+        {"value": "5", "label": "Java 5"},
+        {"value": "6", "label": "Java 6"},
         {"value": "7", "label": "Java 7"},
         {"value": "8", "label": "Java 8 (LTS)"},
         {"value": "9", "label": "Java 9"},
@@ -1402,8 +1561,21 @@ async def get_conversion_types():
 async def run_migration(job_id: str, request: MigrationRequest):
     """Background task to run the full migration pipeline"""
     job = migration_jobs[job_id]
+    from datetime import datetime, timezone
 
     try:
+        # Record overall start time
+        job.started_at = datetime.now(timezone.utc)
+
+        # Validate and normalize source Java version (reject "auto" or invalid values)
+        try:
+            source_version = int(request.source_java_version)
+        except (ValueError, TypeError):
+            # If source_version is "auto" or invalid, default to 8
+            source_version = 8
+            add_log(job_id, f"Warning: Invalid source Java version '{request.source_java_version}', defaulting to Java 8")
+            request.source_java_version = "8"
+        
         # Determine which service to use based on platform
         if request.platform == GitPlatform.GITLAB:
             repo_service = gitlab_service
@@ -1412,15 +1584,25 @@ async def run_migration(job_id: str, request: MigrationRequest):
             repo_service = github_service
             token_field = "token"  # Updated to match new field name
 
-        # Step 1: Clone repository
+        # Step 1: Clone repository (Connection Phase)
+        job.connection_start = datetime.now(timezone.utc)
         update_job(job_id, MigrationStatus.CLONING, 5, "Cloning source repository...")
         clone_path = await repo_service.clone_repository(
             request.token,  # Use the generic token field
             request.source_repo_url
         )
+        job.connection_end = datetime.now(timezone.utc)
         add_log(job_id, f"Repository cloned to {clone_path}")
         
-        # Step 2: Analyze project and detect initial issues
+        # Calculate connection duration
+        if job.connection_start and job.connection_end:
+            duration_ms = (job.connection_end - job.connection_start).total_seconds() * 1000
+            minutes = int(duration_ms // 60000)
+            seconds = int((duration_ms % 60000) // 1000)
+            job.connection_duration = f"{minutes}m {seconds}s"
+        
+        # Step 2: Analyze project and detect initial issues (Discovery Phase)
+        job.discovery_start = datetime.now(timezone.utc)
         update_job(job_id, MigrationStatus.ANALYZING, 15, "Analyzing project structure and detecting issues...")
         analysis = await migration_service.analyze_project(clone_path)
         # Convert dependencies dicts to DependencyInfo objects
@@ -1446,8 +1628,17 @@ async def run_migration(job_id: str, request: MigrationRequest):
         job.total_errors = len([i for i in initial_issues if i.severity == IssueSeverity.ERROR])
         job.total_warnings = len([i for i in initial_issues if i.severity == IssueSeverity.WARNING])
         add_log(job_id, f"Found {job.total_errors} errors, {job.total_warnings} warnings to process")
+        job.discovery_end = datetime.now(timezone.utc)
         
-        # Step 3: Run migrations for each selected conversion type
+        # Calculate discovery duration
+        if job.discovery_start and job.discovery_end:
+            duration_ms = (job.discovery_end - job.discovery_start).total_seconds() * 1000
+            minutes = int(duration_ms // 60000)
+            seconds = int((duration_ms % 60000) // 1000)
+            job.discovery_duration = f"{minutes}m {seconds}s"
+        
+        # Step 3: Run migrations for each selected conversion type (Strategy Phase)
+        job.strategy_start = datetime.now(timezone.utc)
         progress = 30
         for conv_type in request.conversion_types:
             update_job(job_id, MigrationStatus.MIGRATING, progress, f"Running {conv_type} migration...")
@@ -1479,8 +1670,17 @@ async def run_migration(job_id: str, request: MigrationRequest):
         add_log(job_id, f"Modified {job.files_modified} files, fixed {job.issues_fixed} issues")
         job.errors_fixed = len([i for i in job.issues if i.severity == IssueSeverity.ERROR and i.status == IssueStatus.FIXED])
         job.warnings_fixed = len([i for i in job.issues if i.severity == IssueSeverity.WARNING and i.status == IssueStatus.FIXED])
+        job.strategy_end = datetime.now(timezone.utc)
         
-        # Step 4: Run tests
+        # Calculate strategy duration
+        if job.strategy_start and job.strategy_end:
+            duration_ms = (job.strategy_end - job.strategy_start).total_seconds() * 1000
+            minutes = int(duration_ms // 60000)
+            seconds = int((duration_ms % 60000) // 1000)
+            job.strategy_duration = f"{minutes}m {seconds}s"
+        
+        # Step 4: Run tests (Migration Phase Start)
+        job.migration_start = datetime.now(timezone.utc)
         if request.run_tests:
             update_job(job_id, MigrationStatus.TESTING, 60, "Running tests and validating APIs...")
             test_result = await migration_service.run_tests(clone_path)
@@ -1503,13 +1703,35 @@ async def run_migration(job_id: str, request: MigrationRequest):
             except Exception:
                 project_key = job.source_repo
 
+            # If the migration request included a Sonar token, use it temporarily
+            orig_sonar_token = sonarqube_service.sonar_token
+            if getattr(request, 'token', None):
+                sonarqube_service.sonar_token = request.token
+
             sonar_result = await sonarqube_service.analyze_project(clone_path, project_key)
+
+            # Debug: show sonar_result keys/summary (do not log tokens)
+            try:
+                print(f"[Migration] sonar_result for project_key={project_key}: {{'bugs': {sonar_result.get('bugs')}, 'vulnerabilities': {sonar_result.get('vulnerabilities')}, 'code_smells': {sonar_result.get('code_smells')}, 'coverage': {sonar_result.get('coverage')}, 'security_hotspots': {sonar_result.get('security_hotspots')}, 'duplications': {sonar_result.get('duplications')}}}")
+            except Exception:
+                pass
+            # Attach full sonar result to the job so frontend can read detailed fields directly
+            try:
+                setattr(job, 'sonarqube_results', sonar_result)
+            except Exception:
+                pass
             job.sonar_quality_gate = sonar_result.get("quality_gate", "N/A")
             job.sonar_bugs = sonar_result.get("bugs", 0)
             job.sonar_vulnerabilities = sonar_result.get("vulnerabilities", 0)
             job.sonar_code_smells = sonar_result.get("code_smells", 0)
             job.sonar_coverage = sonar_result.get("coverage", 0.0)
+            job.sonar_accepted_issues = int(sonar_result.get("accepted_issues", 0) or 0)
+            job.sonar_security_hotspots = int(sonar_result.get("security_hotspots", 0) or 0)
+            job.sonar_duplications = float(sonar_result.get("duplications", 0.0) or 0.0)
             add_log(job_id, f"SonarQube: Quality Gate = {job.sonar_quality_gate}")
+
+            # restore original sonar token
+            sonarqube_service.sonar_token = orig_sonar_token
 
         # Step 5b: FOSSA analysis (optional)
         if getattr(request, 'run_fossa', False):
@@ -1582,6 +1804,23 @@ async def run_migration(job_id: str, request: MigrationRequest):
             else:
                 add_log(job_id, f"Failed to send migration summary to {request.email}")
         
+        # Mark end of migration phase
+        job.migration_end = datetime.now(timezone.utc)
+        
+        # Calculate migration phase duration
+        if job.migration_start and job.migration_end:
+            duration_ms = (job.migration_end - job.migration_start).total_seconds() * 1000
+            minutes = int(duration_ms // 60000)
+            seconds = int((duration_ms % 60000) // 1000)
+            job.migration_duration = f"{minutes}m {seconds}s"
+        
+        # Calculate total migration duration
+        if job.started_at and job.migration_end:
+            total_duration_ms = (job.migration_end - job.started_at).total_seconds() * 1000
+            total_minutes = int(total_duration_ms // 60000)
+            total_seconds = int((total_duration_ms % 60000) // 1000)
+            job.total_duration = f"{total_minutes}m {total_seconds}s"
+        
         # Complete
         update_job(job_id, MigrationStatus.COMPLETED, 100, "Migration completed successfully!")
         job.completed_at = datetime.now(timezone.utc)
@@ -1621,8 +1860,18 @@ def generate_migration_issues(
     # Check for any java files directly in project root (standalone Java files!)
     java_dirs.append(project_path)
     
-    source = int(source_version)
-    target = int(target_version)
+    # Validate and convert versions to integers
+    try:
+        source = int(source_version)
+    except (ValueError, TypeError):
+        print(f"Warning: Invalid source version '{source_version}', defaulting to 8")
+        source = 8
+    
+    try:
+        target = int(target_version)
+    except (ValueError, TypeError):
+        print(f"Warning: Invalid target version '{target_version}', defaulting to 17")
+        target = 17
     
     print(f"Scanning directories: {java_dirs}")
     
