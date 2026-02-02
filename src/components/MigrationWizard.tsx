@@ -60,9 +60,9 @@ const MIGRATION_STEPS = [
   },
   {
     id: 5,
-    name: "Result",
+    name: "Summary",
     icon: "📊",
-    description: "Migration Results",
+    description: "Migration Summary",
     summary: "View migration report and download migrated project"
   },
 ];
@@ -254,8 +254,9 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
           setAnalysisDuration(`${minutes}m ${seconds}s`);
           
           setRepoAnalysis(analysis);
-          // mark completion so header timer remains paused/visible
+          // mark completion and finalize timer: freeze duration and clear start time
           setAnalysisCompleted(true);
+          setAnalysisStartTime(null);
           // Set detected source Java version state so UI locks or shows detected value
           if ((analysis as any)?.java_version_detected_from_build) {
             setSelectedSourceVersion(analysis.java_version || "");
@@ -359,22 +360,27 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   }, [step, selectedRepo, repoAnalysis, githubToken]);
 
   // Live analysis timer: updates `analysisDuration` every second while analysis is running
+  // Stop the timer and finalize duration once `repoAnalysis` is available.
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
+
     if (analysisStartTime && !repoAnalysis) {
-      interval = setInterval(() => {
-        const ms = Date.now() - analysisStartTime;
+      const update = () => {
+        const ms = Date.now() - (analysisStartTime as number);
         const minutes = Math.floor(ms / 60000);
         const seconds = Math.floor((ms % 60000) / 1000);
         setAnalysisDuration(`${minutes}m ${seconds}s`);
-      }, 1000);
-    } else if (analysisStartTime && repoAnalysis) {
-      // final duration - ensure it's set when analysis finishes
-      const ms = Date.now() - analysisStartTime;
+      };
+      update();
+      interval = setInterval(update, 1000);
+    } else if (repoAnalysis && analysisStartTime) {
+      // Finalize duration once analysis finishes and stop the live timer
+      const ms = Date.now() - (analysisStartTime as number);
       const minutes = Math.floor(ms / 60000);
       const seconds = Math.floor((ms % 60000) / 1000);
       setAnalysisDuration(`${minutes}m ${seconds}s`);
-      // keep analysisStartTime intact for potential debugging; could clear if desired
+      setAnalysisStartTime(null);
+      setAnalysisCompleted(true);
     }
 
     return () => { if (interval) clearInterval(interval); };
@@ -1118,20 +1124,19 @@ public class UserService {
         {/* Right-aligned live timer in header (highlighted area) */}
         {(analysisStartTime || analysisCompleted || (repoAnalysis && analysisDuration && analysisDuration !== "0m 0s")) && (
           <div style={{ marginLeft: "auto", alignSelf: "center", display: "flex", gap: 8, alignItems: "center" }}>
-            {analysisStartTime && !repoAnalysis ? (
+            {analysisStartTime ? (
               <div style={{ padding: "6px 10px", background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 8, color: "#92400e", fontSize: 13 }}>
                 ⏳ Analyzing — {analysisDuration}
+              </div>
+            ) : analysisCompleted ? (
+              <div style={{ padding: "6px 10px", background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 8, color: "#92400e", fontSize: 13 }}>
+                ✅ Analysis completed — {analysisDuration}
               </div>
             ) : repoAnalysis ? (
               <div style={{ padding: "6px 10px", background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 8, color: "#0369a1", fontSize: 13 }}>
                 ⏱️ Completed — {analysisDuration}
               </div>
-            ) : (
-              // analysisCompleted true but no repoAnalysis (paused/failed)
-              <div style={{ padding: "6px 10px", background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 8, color: "#92400e", fontSize: 13 }}>
-                ✅ Analysis completed — {analysisDuration}
-              </div>
-            )}
+            ) : null}
           </div>
         )}
       </div>
@@ -2911,9 +2916,6 @@ public class UserService {
         </div>
       </div>
 
-      {/* Show what we plan to modernize */}
-      <div style={styles.sectionTitle}>🎯 Migration Configuration</div>
-
       {/* What we'll modernize - Card Design */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b", marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
@@ -2921,43 +2923,34 @@ public class UserService {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
           {[
-            {
-              icon: "☕",
-              title: "Java Version Upgrade",
-              desc: `From Java ${selectedSourceVersion} to Java ${selectedTargetVersion}`,
-              color: "#2563eb"
-            },
-            {
-              icon: "🔧",
-              title: "Code Refactoring",
-              desc: "Modernize code patterns and best practices",
-              color: "#059669"
-            },
-            {
-              icon: "📦",
-              title: "Dependencies",
-              desc: "Update and ensure compatibility",
-              color: "#7c3aed"
-            },
-            {
-              icon: "🧠",
-              title: "Business Logic",
-              desc: "Improve performance and reliability",
-              color: "#dc2626"
-            },
-            {
-              icon: "🧪",
-              title: "Testing",
-              desc: "Execute and validate test suites",
-              color: "#ea580c"
-            },
-            {
-              icon: "🔍",
-              title: "Code Quality",
-              desc: "Analysis and improvement",
-              color: "#0891b2"
-            }
-          ].map((item, idx) => (
+              {
+                icon: "🛠️",
+                title: "Code Refactor & Quality",
+                desc: "Modernize code patterns and improve code quality",
+                tooltip:"Refactor legacy code, remove anti-patterns, improve readability, enforce standards, and fix code smells, bugs, and vulnerabilities.",
+                color: "#059669"
+              },
+              {
+                icon: "📦",
+                title: "Dependencies",
+                desc: "Update dependencies and ensure compatibility",
+                tooltip: "Upgrade libraries, resolve version conflicts, remove deprecated dependencies, and ensure Java version compatibility.",
+                color: "#7c3aed"
+              },
+              {
+                icon: "🧠",
+                title: "Business Logic",
+                desc: "Improve performance and ensure reliability",
+                tooltip: "Optimize algorithms, improve transactional flow, handle edge cases, and ensure functional correctness.",
+                color: "#dc2626"
+              },
+              {
+                icon: "🧪",
+                title: "Testing",
+                desc: "Execute test suites and validate test suites",
+                tooltip: "Run unit, integration, and regression tests to validate behavior after modernization.",
+                color: "#ea580c"
+              }].map((item, idx) => (
             <div
               key={idx}
               style={{
@@ -2983,9 +2976,60 @@ public class UserService {
                 }}>
                   {item.icon}
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b", marginBottom: 4 }}>
-                    {item.title}
+                <div style={{ flex: 1, position: 'relative' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b" }}>{item.title}</div>
+                    {/* Info icon */}
+                    <div style={{ marginLeft: 'auto', position: 'relative' }}>
+                      <div
+                        style={{
+                          width: 20,
+                          height: 20,
+                          borderRadius: '50%',
+                          backgroundColor: '#e2e8f0',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: '#64748b',
+                          cursor: 'help'
+                        }}
+                        onMouseEnter={(e) => {
+                          const tooltip = (e.currentTarget.nextElementSibling) as HTMLElement;
+                          if (tooltip) tooltip.style.display = 'block';
+                        }}
+                        onMouseLeave={(e) => {
+                          const tooltip = (e.currentTarget.nextElementSibling) as HTMLElement;
+                          if (tooltip) tooltip.style.display = 'none';
+                        }}
+                      >
+                        i
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'none',
+                          position: 'absolute',
+                          top: 28,
+                          right: 0,
+                          width: 300,
+                          backgroundColor: '#1e293b',
+                          color: '#f1f5f9',
+                          padding: '12px 14px',
+                          borderRadius: 10,
+                          fontSize: 12,
+                          lineHeight: 1.5,
+                          zIndex: 1000,
+                          boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+                          whiteSpace: 'normal'
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, marginBottom: 8, color: '#94a3b8', fontSize: 13 }}>{item.title} Details</div>
+                        <div style={{ marginBottom: 6 }}>{item.tooltip}</div>
+                        <div style={{ position: 'absolute', top: -6, right: 20, width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderBottom: '6px solid #1e293b' }} />
+                      </div>
+                    </div>
                   </div>
                   <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.4 }}>
                     {item.desc}
@@ -3035,11 +3079,6 @@ public class UserService {
         )}
       </div>
 
-      {/* Potential Compatibility Issues - COMMENTED OUT */}
-      {/* <div style={styles.field}>
-        <label style={styles.label}>Potential Compatibility Issues</label>
-        [Content commented out - showing compatibility matrix instead]
-      </div> */}
 
       <div style={styles.field}>
         <label style={styles.label}>Migration Options</label>
@@ -3251,7 +3290,7 @@ public class UserService {
       <div style={styles.btnRow}>
         <button style={styles.secondaryBtn} onClick={() => setStep(3)}>← Back</button>
         <button style={{ ...styles.primaryBtn, opacity: loading ? 0.5 : 1 }} onClick={handleStartMigration} disabled={loading}>
-          {loading ? "Starting..." : "🚀 Start Migration"}
+          {loading ? "Migrating..." : "🚀 Migration Summary"}
         </button>
       </div>
     </div>
