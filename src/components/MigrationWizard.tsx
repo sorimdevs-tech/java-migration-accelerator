@@ -86,7 +86,7 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   const [sourceVersions, setSourceVersions] = useState<JavaVersionOption[]>([]);
   const [targetVersions, setTargetVersions] = useState<JavaVersionOption[]>([]);
   const [selectedSourceVersion, setSelectedSourceVersion] = useState("8");
-  const [selectedTargetVersion, setSelectedTargetVersion] = useState("17");
+  const [selectedTargetVersion, setSelectedTargetVersion] = useState("");
   const [conversionTypes, setConversionTypes] = useState<ConversionType[]>([]);
   const [selectedConversions, setSelectedConversions] = useState<string[]>(["java_version"]);
   const [runTests, setRunTests] = useState(true);
@@ -379,7 +379,7 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   useEffect(() => {
     if (selectedRepo) {
       // Format: reponame-java{version}-modernized
-      const generatedName = `${selectedRepo.name || "repo"}-java${selectedTargetVersion}-modernized`;
+      const generatedName = `${selectedRepo.name || "repo"}${selectedTargetVersion ? `-java${selectedTargetVersion}` : ""}-modernized`;
       setTargetRepoName(generatedName);
     }
   }, [selectedRepo, selectedTargetVersion]);
@@ -698,7 +698,7 @@ public class UserService {
     setCurrentPath("");
     setTargetRepoName("");
     setSelectedSourceVersion("8");
-    setSelectedTargetVersion("17");
+    setSelectedTargetVersion("");
     setSelectedConversions(["java_version"]);
     setRunTests(true);
     setRunSonar(false);
@@ -2827,6 +2827,7 @@ public class UserService {
           <div style={styles.field}>
             <label style={styles.label}>Target Java Version</label>
             <select style={styles.select} value={selectedTargetVersion} onChange={(e) => setSelectedTargetVersion(e.target.value)}>
+              <option value="">-- Select a target Java version --</option>
               {userSelectedVersion
                 ? targetVersions.filter(v => parseInt(v.value) > parseInt(selectedSourceVersion)).map((v) => <option key={v.value} value={v.value}>{v.label}</option>)
                 : targetVersions.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)
@@ -2861,7 +2862,13 @@ public class UserService {
 
       <div style={styles.btnRow}>
         <button style={styles.secondaryBtn} onClick={() => setStep(2)}>← Back</button>
-        <button style={styles.primaryBtn} onClick={() => setStep(4)}>Continue to Migration →</button>
+        <button
+          style={{ ...styles.primaryBtn, opacity: selectedTargetVersion ? 1 : 0.5 }}
+          onClick={() => selectedTargetVersion && setStep(4)}
+          disabled={!selectedTargetVersion}
+        >
+          Continue to Migration →
+        </button>
       </div>
     </div>
   );
@@ -5646,7 +5653,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   assessmentItem: { background: "#fff", padding: 18, borderRadius: 10, textAlign: "center", border: "1px solid #e2e8f0" },
   assessmentLabel: { fontSize: 11, color: "#64748b", marginBottom: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" },
   assessmentValue: { fontSize: 20, fontWeight: 700, color: "#1e293b" },
-  structureBox: { background: "#f8fafc", padding: 18, borderRadius: 10, marginBottom: 20, border: "1px solid #e2e8f0" },
+  structureBox: { background: "#f8fafc", padding: 18, borderRadius: 10, marginTop: 16, marginBottom: 20, border: "1px solid #e2e8f0" },
   structureTitle: { fontSize: 14, fontWeight: 600, marginBottom: 12, color: "#1e293b" },
   structureGrid: { display: "flex", gap: 14, flexWrap: "wrap" },
   structureFound: { color: "#059669", fontWeight: 600 },
