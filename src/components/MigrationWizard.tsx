@@ -256,6 +256,23 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
           setRepoAnalysis(analysis);
           // mark completion so header timer remains paused/visible
           setAnalysisCompleted(true);
+          // Set detected source Java version state so UI locks or shows detected value
+          if ((analysis as any)?.java_version_detected_from_build) {
+            setSelectedSourceVersion(analysis.java_version || "");
+            setUserSelectedVersion(analysis.java_version || null);
+            setSuggestedJavaVersion(analysis.java_version || "auto");
+            setSourceVersionStatus("detected");
+          } else if (isJavaVersionKnown(analysis.java_version)) {
+            setSelectedSourceVersion(analysis.java_version);
+            setUserSelectedVersion(analysis.java_version);
+            setSuggestedJavaVersion(analysis.java_version);
+            setSourceVersionStatus("detected");
+          } else {
+            // No detected version - ensure UI shows manual selector
+            setSuggestedJavaVersion("auto");
+            setUserSelectedVersion(null);
+            setSourceVersionStatus("unknown");
+          }
           // Check if it's a Java project
           // Consider as Java project if any .java files are found (even if no build file or version is detected)
           const hasJavaIndicators = 
@@ -699,6 +716,10 @@ public class UserService {
     setTargetRepoName("");
     setSelectedSourceVersion("8");
     setSelectedTargetVersion("");
+    setSuggestedJavaVersion("auto");
+    setUserSelectedVersion(null);
+    setSourceVersionStatus("unknown");
+    setAnalysisCompleted(false);
     setSelectedConversions(["java_version"]);
     setRunTests(true);
     setRunSonar(false);
@@ -2754,7 +2775,8 @@ public class UserService {
                   ✓ Java {selectedSourceVersion}
                 </div>
               ) : (
-                // Show Unknown with dropdown selector
+                // Show Unknown with dropdown selector only when no version selected and detection failed
+                (!userSelectedVersion && sourceVersionStatus === "unknown") ? (
                 <>
                   <div style={{
                     padding: "12px 14px",
@@ -2776,6 +2798,7 @@ public class UserService {
                     onChange={(e) => {
                       setSelectedSourceVersion(e.target.value);
                       setUserSelectedVersion(e.target.value);
+                      setSourceVersionStatus("detected");
                     }}
                     style={{
                       width: "100%",
@@ -2793,14 +2816,18 @@ public class UserService {
                       <option key={v.value} value={v.value}>{v.label}</option>
                     ))}
                   </select>
+                  <p style={styles.helpText}>
+                    📋 No Java version found in pom.xml or build.gradle - Please select the source Java version manually above
+                  </p>
                 </>
+                ) : null
               )}
               <p style={styles.helpText}>
                 {userSelectedVersion
                   ? "✓ Source version selected - ready for migration"
                   : (repoAnalysis?.java_version_detected_from_build === false
                       ? "📋 No Java version found in pom.xml or build.gradle - Please select the source Java version manually above"
-                      : "📋 Java version not detected in source code - Please select the source Java version manually above")
+                      : null)
                 }
               </p>
               {!userSelectedVersion && (
