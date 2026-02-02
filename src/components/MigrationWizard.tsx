@@ -256,7 +256,6 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
           setRepoAnalysis(analysis);
           // mark completion and finalize timer: freeze duration and clear start time
           setAnalysisCompleted(true);
-          setAnalysisStartTime(null);
           // Set detected source Java version state so UI locks or shows detected value
           if ((analysis as any)?.java_version_detected_from_build) {
             setSelectedSourceVersion(analysis.java_version || "");
