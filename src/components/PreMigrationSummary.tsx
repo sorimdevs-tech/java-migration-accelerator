@@ -75,8 +75,8 @@ export default function PreMigrationSummary({
       {/* Header */}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
-          <h1 style={styles.title}>Pre-Migration Summary</h1>
-          <p style={styles.subtitle}>Comprehensive analysis of your project before migration</p>
+          <h1 style={styles.title}>Pre-Modernization Summary</h1>
+          <p style={styles.subtitle}>Comprehensive analysis of your project before modernization</p>
         </div>
         <div style={{
           ...styles.riskBadge,
@@ -266,9 +266,9 @@ export default function PreMigrationSummary({
         </div>
       </div>
 
-      {/* Migration Configuration */}
+      {/* Modernization Configuration */}
       <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>⚙️ Migration Configuration</h2>
+        <h2 style={styles.sectionTitle}>⚙️ Modernization Configuration</h2>
         <div style={styles.configGrid}>
           <div style={styles.configCard}>
             <div style={styles.configIcon}>🧪</div>
@@ -281,7 +281,7 @@ export default function PreMigrationSummary({
                 {runTests ? "Enabled" : "Disabled"}
               </div>
               <div style={styles.configDesc}>
-                Execute test suite after migration
+                Execute test suite after modernization
               </div>
             </div>
           </div>
@@ -439,7 +439,7 @@ export default function PreMigrationSummary({
               <div style={styles.issueDesc}>
                 {repoAnalysis.has_tests 
                   ? "Test suite will be executed to verify changes" 
-                  : "Add tests for better migration confidence"}
+                  : "Add tests for better modernization confidence"}
               </div>
             </div>
           </div>
@@ -450,7 +450,7 @@ export default function PreMigrationSummary({
               <div style={styles.issueTitle}>API Need Changes</div>
               <div style={styles.issueValue}>{repoAnalysis.api_endpoints.length} endpoints</div>
               <div style={styles.issueDesc}>
-                REST API endpoints will be validated after migration
+                REST API endpoints will be validated after modernization
               </div>
             </div>
           </div>
@@ -517,7 +517,7 @@ export default function PreMigrationSummary({
                 {riskLevel === "high" && (
                   <div style={styles.recommendation}>
                     <span style={styles.recommendationIcon}>⚠️</span>
-                    <span>This is a high-risk migration. Consider thorough testing and backup before proceeding.</span>
+                    <span>This is a high-risk modernization. Consider thorough testing and backup before proceeding.</span>
                   </div>
                 )}
                 {riskLevel === "medium" && (
@@ -529,12 +529,12 @@ export default function PreMigrationSummary({
                 {riskLevel === "low" && (
                   <div style={styles.recommendation}>
                     <span style={styles.recommendationIcon}>✅</span>
-                    <span>Migration appears to be low-risk. Proceed with standard testing procedures.</span>
+                    <span>Modernization appears to be low-risk. Proceed with standard testing procedures.</span>
                   </div>
                 )}
                 <div style={styles.recommendation}>
                   <span style={styles.recommendationIcon}>📊</span>
-                  <span>Review the detailed dependency changes before starting migration</span>
+                  <span>Review the detailed dependency changes before starting modernization</span>
                 </div>
                 <div style={styles.recommendation}>
                   <span style={styles.recommendationIcon}>🧪</span>
