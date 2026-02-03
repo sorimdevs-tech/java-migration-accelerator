@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import "./MigrationWizard.css";
+import PreMigrationSummary from "./PreMigrationSummary";
+import DependencyAnalysis from "./DependencyAnalysis";
 import {
   fetchRepositories,
   analyzeRepository,
@@ -48,23 +50,23 @@ const MIGRATION_STEPS = [
     id: 3,
     name: "Strategy",
     icon: "📋",
-    description: "Assessment & Migration Strategy",
+    description: "Assessment & Migration Report",
     summary: "Review assessment results and define the migration roadmap"
   },
   {
     id: 4,
     name: "Migration",
     icon: "⚡",
-    description: "Build Modernization & Migration",
+    description: "Review Modernization",
     summary: "Execute the upgrade using automation tools and refactor legacy components"
   },
-  {
-    id: 5,
-    name: "Summary",
-    icon: "📊",
-    description: "Migration Summary",
-    summary: "View migration report and download migrated project"
-  },
+  // {
+  //   id: 5,
+  //   name: "Summary",
+  //   icon: "📊",
+  //   description: "Migration Summary",
+  //   summary: "View migration report and download migrated project"
+  // },
 ];
 
 export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () => void }) {
@@ -109,6 +111,8 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   const [fileLoading, setFileLoading] = useState(false);
   const [pathHistory, setPathHistory] = useState<string[]>([""]);
   const [showFileExplorer, setShowFileExplorer] = useState(true);
+  const [isPrivateRepo, setIsPrivateRepo] = useState(false);
+  const [isEnterpriseRepo, setIsEnterpriseRepo] = useState(false);
   
   // High-risk project states (no pom.xml/build.gradle or unknown Java version)
   const [isHighRiskProject, setIsHighRiskProject] = useState(false);
@@ -144,6 +148,8 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   
   // Build Modernization acknowledgment
   const [migrationConfigAcknowledged, setMigrationConfigAcknowledged] = useState(false);
+  // Show full pre-migration summary modal
+  const [showPreMigrationFull, setShowPreMigrationFull] = useState(false);
 
   // Code diff viewer states for Result page
   const [codeChanges, setCodeChanges] = useState<{
@@ -655,7 +661,13 @@ public class UserService {
     );
   };
 
+  // When user clicks "Start Migration" show pre-migration summary modal first.
   const handleStartMigration = () => {
+    setShowPreMigrationFull(true);
+  };
+
+  // Actual migration starter, called after user confirms on the pre-migration summary modal
+  const confirmStartMigration = () => {
     if (!selectedRepo && !repoUrl) {
       setError("Please select a repository or enter a repository URL");
       return;
@@ -675,8 +687,8 @@ public class UserService {
 
     // Detect platform based on URL
     const detectPlatform = (url: string) => {
-      if (url.includes('gitlab.com')) return 'gitlab';
-      if (url.includes('github.com')) return 'github';
+      if (url?.includes('gitlab.com')) return 'gitlab';
+      if (url?.includes('github.com')) return 'github';
       return 'github'; // default
     };
 
@@ -700,6 +712,7 @@ public class UserService {
     startMigration(migrationRequest)
       .then((job) => {
         setMigrationJob(job);
+        setShowPreMigrationFull(false);
         setStep(5); // Go to Migration Progress step
       })
       .catch((err) => {
@@ -822,6 +835,18 @@ public class UserService {
     </div>
   );
 
+  // Detect if URL is enterprise GitHub (github.<custom>.com) or GitLab
+  const detectPrivateOrEnterprise = (url: string): { isPrivate: boolean; isEnterprise: boolean } => {
+    if (!url) return { isPrivate: false, isEnterprise: false };
+    
+    // Enterprise GitHub: github.<anything>.com (not github.com)
+    const isEnterprise = /^https?:\/\/(www\.)?github\.([^.]+)\.com\//i.test(url) || /^https?:\/\/(www\.)?gitlab\.com\//i.test(url);
+    
+    // For now, assume enterprise URLs need a token; public github.com URLs don't require it
+    // To properly detect private vs public would require API calls
+    return { isPrivate: false, isEnterprise };
+  };
+
   const normalizeGithubUrl = (url: string): { valid: boolean; normalizedUrl: string; message: string } => {
     if (!url.trim()) {
       return { valid: false, normalizedUrl: "", message: "URL is required" };
@@ -865,7 +890,6 @@ public class UserService {
 
   const renderStep1 = () => {
     const urlValidation = repoUrl ? normalizeGithubUrl(repoUrl) : { valid: false, normalizedUrl: "", message: "" };
-    const showEnterpriseToken = repoUrl && isEnterpriseGithub(urlValidation.normalizedUrl || repoUrl);
     return (
       <div style={styles.card}>
         <div style={styles.stepHeader}>
@@ -952,25 +976,41 @@ public class UserService {
             style={{ ...styles.input, borderColor: urlValidation.valid ? '#22c55e' : repoUrl ? '#ef4444' : '#e2e8f0' }}
             value={repoUrl}
             onChange={(e) => {
-              setRepoUrl(e.target.value);
+              const newUrl = e.target.value;
+              setRepoUrl(newUrl);
+              // Detect if URL is private or enterprise
+              const { isPrivate, isEnterprise } = detectPrivateOrEnterprise(newUrl);
+              setIsPrivateRepo(isPrivate);
+              setIsEnterpriseRepo(isEnterprise);
               setSelectedRepo(null);
               setRepoAnalysis(null);
             }}
             placeholder="https://github.com/owner/repository"
           />
-          {showEnterpriseToken && (
+          {/* Show access token field only for private or enterprise repositories */}
+          {repoUrl && urlValidation.valid && (
             <div style={{ marginTop: 16 }}>
-              <label style={{ ...styles.label, fontWeight: 500 }}>Personal Access Token (required for GitHub Enterprise)</label>
+              <label style={{ ...styles.label, fontWeight: 500 }}>
+                Personal Access Token {isPrivateRepo || isEnterpriseRepo ? '(required)' : '(optional)'}
+              </label>
               <input
                 type="password"
                 style={{ ...styles.input, borderColor: githubToken ? '#22c55e' : '#e2e8f0' }}
                 value={githubToken}
                 onChange={e => setGithubToken(e.target.value)}
-                placeholder="Paste your GitHub Enterprise PAT here"
+                placeholder="Paste your GitHub personal access token here"
                 autoComplete="off"
               />
               <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
-                Required for private/enterprise repos. <a href="https://docs.github.com/en/enterprise-server@3.0/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token" target="_blank" rel="noopener noreferrer">How to create a PAT?</a>
+                {isPrivateRepo || isEnterpriseRepo ? (
+                  <>
+                    <strong>Required</strong> to access {isEnterpriseRepo ? 'enterprise' : 'private'} repositories. <a href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token" target="_blank" rel="noopener noreferrer">How to create a PAT?</a>
+                  </>
+                ) : (
+                  <>
+                    <strong>Optional</strong> but recommended. Using a token increases GitHub API rate limits and ensures access to your repositories. <a href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token" target="_blank" rel="noopener noreferrer">Learn more</a>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -1198,8 +1238,8 @@ public class UserService {
                 </div>
               ) : null}
 
-              {/* Java project but no framework detected */}
-              {isJavaProject && detectedFrameworks.length === 0 && (
+{/* Java project but no framework detected - Hide for Maven/Gradle projects */}
+              {isJavaProject && detectedFrameworks.length === 0 && !repoAnalysis?.structure?.has_pom_xml && !repoAnalysis?.structure?.has_build_gradle && (
                 <div style={{
                   background: "#fef9c3",
                   border: "2px solid #facc15",
@@ -1724,6 +1764,17 @@ public class UserService {
                         }}>
                           <span>⏱️</span>
                           <span>Repository analysis completed in <strong>{analysisDuration}</strong></span>
+                        </div>
+                      )}
+
+                      {/* Dependency Analysis Component */}
+                      {repoAnalysis && repoAnalysis.dependencies && repoAnalysis.dependencies.length > 0 && (
+                        <div style={{ marginBottom: 24 }}>
+                          <DependencyAnalysis 
+                            dependencies={repoAnalysis.dependencies}
+                            summary={(repoAnalysis as any).dependency_summary}
+                            javaVersion={repoAnalysis.java_version || undefined}
+                          />
                         </div>
                       )}
                       
@@ -2445,7 +2496,7 @@ public class UserService {
       <div style={styles.stepHeader}>
         <span style={styles.stepIcon}>📋</span>
         <div>
-          <h2 style={styles.title}>Assessment & Migration Strategy</h2>
+          <h2 style={styles.title}>Assessment & Migration </h2>
           <p style={styles.subtitle}>{MIGRATION_STEPS[2].summary}</p>
         </div>
       </div>
@@ -2873,24 +2924,6 @@ public class UserService {
           </div>
         </div>
 
-      <div style={styles.field}>
-        <label style={styles.label}>Target Repository Name</label>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input 
-            type="text" 
-            style={{ ...styles.input, flex: 1, backgroundColor: "#f0fdf4", borderColor: "#22c55e" }} 
-            value={targetRepoName} 
-            onChange={(e) => setTargetRepoName(e.target.value)} 
-            placeholder={`${selectedRepo?.name || "repo"}-java${selectedTargetVersion}-modernized`} 
-          />
-        </div>
-        <p style={styles.helpText}>
-          Format: <code style={{ backgroundColor: "#f1f5f9", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>
-            {'{repo-name}'}-java{'{version}'}-modernized
-          </code> (auto-generated, editable)
-        </p>
-      </div>
-
       <div style={styles.btnRow}>
         <button style={styles.secondaryBtn} onClick={() => setStep(2)}>← Back</button>
         <button
@@ -2898,11 +2931,14 @@ public class UserService {
           onClick={() => selectedTargetVersion && setStep(4)}
           disabled={!selectedTargetVersion}
         >
-          Continue to Migration →
+          Continue to Review →
         </button>
       </div>
     </div>
   );
+
+  /* First (older) migration step removed — consolidated below. */
+
 
   // Consolidated Step 4: Migration (Build Modernization & Refactor + Code Migration + Testing)
   const renderMigrationStep = () => (
@@ -2922,136 +2958,23 @@ public class UserService {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
           {[
-              {
-                icon: "🛠️",
-                title: "Code Refactor & Quality",
-                desc: "Modernize code patterns and improve code quality",
-                tooltip:"Refactor legacy code, remove anti-patterns, improve readability, enforce standards, and fix code smells, bugs, and vulnerabilities.",
-                color: "#059669"
-              },
-              {
-                icon: "📦",
-                title: "Dependencies",
-                desc: "Update dependencies and ensure compatibility",
-                tooltip: "Upgrade libraries, resolve version conflicts, remove deprecated dependencies, and ensure Java version compatibility.",
-                color: "#7c3aed"
-              },
-              {
-                icon: "🧠",
-                title: "Business Logic",
-                desc: "Improve performance and ensure reliability",
-                tooltip: "Optimize algorithms, improve transactional flow, handle edge cases, and ensure functional correctness.",
-                color: "#dc2626"
-              },
-              {
-                icon: "🧪",
-                title: "Testing",
-                desc: "Execute test suites and validate test suites",
-                tooltip: "Run unit, integration, and regression tests to validate behavior after modernization.",
-                color: "#ea580c"
-              }].map((item, idx) => (
-            <div
-              key={idx}
-              style={{
-                padding: 20,
-                backgroundColor: "#fff",
-                border: "1px solid #e2e8f0",
-                borderRadius: 12,
-                boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
-                transition: "all 0.2s ease",
-                cursor: "default"
-              }}
-            >
+            { icon: "🛠️", title: "Code Refactor & Quality", desc: "Modernize code patterns and improve code quality", color: "#059669" },
+            { icon: "📦", title: "Dependencies", desc: "Update dependencies and ensure compatibility", color: "#7c3aed" },
+            { icon: "🧠", title: "Business Logic", desc: "Improve performance and ensure reliability", color: "#dc2626" },
+            { icon: "🧪", title: "Testing", desc: "Execute test suites and validate test suites", color: "#ea580c" }
+          ].map((item, idx) => (
+            <div key={idx} style={{ padding: 20, backgroundColor: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, boxShadow: "0 2px 4px rgba(0,0,0,0.05)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
-                <div style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 12,
-                  backgroundColor: `${item.color}10`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 20
-                }}>
+                <div style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: `${item.color}10`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
                   {item.icon}
                 </div>
-                <div style={{ flex: 1, position: 'relative' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b" }}>{item.title}</div>
-                    {/* Info icon */}
-                    <div style={{ marginLeft: 'auto', position: 'relative' }}>
-                      <div
-                        style={{
-                          width: 20,
-                          height: 20,
-                          borderRadius: '50%',
-                          backgroundColor: '#e2e8f0',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: 12,
-                          fontWeight: 600,
-                          color: '#64748b',
-                          cursor: 'help'
-                        }}
-                        onMouseEnter={(e) => {
-                          const tooltip = (e.currentTarget.nextElementSibling) as HTMLElement;
-                          if (tooltip) tooltip.style.display = 'block';
-                        }}
-                        onMouseLeave={(e) => {
-                          const tooltip = (e.currentTarget.nextElementSibling) as HTMLElement;
-                          if (tooltip) tooltip.style.display = 'none';
-                        }}
-                      >
-                        i
-                      </div>
-
-                      <div
-                        style={{
-                          display: 'none',
-                          position: 'absolute',
-                          top: 28,
-                          right: 0,
-                          width: 300,
-                          backgroundColor: '#1e293b',
-                          color: '#f1f5f9',
-                          padding: '12px 14px',
-                          borderRadius: 10,
-                          fontSize: 12,
-                          lineHeight: 1.5,
-                          zIndex: 1000,
-                          boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-                          whiteSpace: 'normal'
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, marginBottom: 8, color: '#94a3b8', fontSize: 13 }}>{item.title} Details</div>
-                        <div style={{ marginBottom: 6 }}>{item.tooltip}</div>
-                        <div style={{ position: 'absolute', top: -6, right: 20, width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderBottom: '6px solid #1e293b' }} />
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.4 }}>
-                    {item.desc}
-                  </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b", marginBottom: 4 }}>{item.title}</div>
+                  <div style={{ fontSize: 13, color: "#64748b" }}>{item.desc}</div>
                 </div>
               </div>
-              <div style={{
-                width: "100%",
-                height: 4,
-                backgroundColor: `${item.color}20`,
-                borderRadius: 2,
-                position: "relative",
-                overflow: "hidden"
-              }}>
-                <div style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: "100%",
-                  backgroundColor: item.color,
-                  borderRadius: 2
-                }} />
+              <div style={{ width: "100%", height: 4, backgroundColor: `${item.color}20`, borderRadius: 2, overflow: "hidden" }}>
+                <div style={{ width: "100%", height: "100%", backgroundColor: item.color }} />
               </div>
             </div>
           ))}
@@ -3060,9 +2983,7 @@ public class UserService {
 
       <div style={styles.field}>
         <label style={styles.label}>Conversion Types</label>
-        <select style={styles.select} value={selectedConversions[0] || ""} onChange={(e) => {
-          setSelectedConversions(e.target.value ? [e.target.value] : []);
-        }}>
+        <select style={styles.select} value={selectedConversions[0] || ""} onChange={(e) => setSelectedConversions(e.target.value ? [e.target.value] : [])}>
           <option value="">-- Select Conversion Type --</option>
           {conversionTypes.map((ct) => (
             <option key={ct.id} value={ct.id}>{ct.name} - {ct.description}</option>
@@ -3070,214 +2991,37 @@ public class UserService {
         </select>
         {selectedConversions.length > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", backgroundColor: "#dbeafe", border: "1px solid #93c5fd", borderRadius: 8, marginTop: 12 }}>
-            <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: "#0c4a6e" }}>
-              ✓ {conversionTypes.find((c) => c.id === selectedConversions[0])?.name} selected
-            </span>
+            <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: "#0c4a6e" }}>✓ {conversionTypes.find((c) => c.id === selectedConversions[0])?.name} selected</span>
             <button style={{ background: "none", border: "none", color: "#0c4a6e", cursor: "pointer", fontSize: 18, padding: 0 }} onClick={() => setSelectedConversions([])}>×</button>
           </div>
         )}
       </div>
 
-
       <div style={styles.field}>
         <label style={styles.label}>Migration Options</label>
-        <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px", alignItems: 'stretch'}}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px", alignItems: "stretch" }}>
           {[
-            {
-              key: "runTests",
-              checked: runTests,
-              onChange: (checked: boolean) => setRunTests(checked),
-              title: "Run Test Suite",
-              desc: "Execute automated tests after migration",
-              tooltip: "Runs the project's test suite to ensure all functionality works correctly after migration. Includes unit tests, integration tests, and any configured test frameworks. Highly recommended to verify migration success.",
-              icon: "🧪",
-              color: "#22c55e",
-              recommended: true
-            },
-            {
-              key: "runSonar",   
-              checked: runSonar,
-              onChange: (checked: boolean) => setRunSonar(checked),
-              title: "SonarQube Analysis",
-              desc: "Run code quality and security analysis",
-              tooltip: "Performs comprehensive code quality analysis using SonarQube. Checks for bugs, vulnerabilities, code smells, test coverage, and maintainability metrics. Provides detailed quality gate status.",
-              icon: "🔍",
-              color: "#f59e0b",
-              recommended: false
-            },
-            {
-              key: "runFossa",
-              checked: runFossa,
-              onChange: (checked: boolean) => setRunFossa(checked),
-              title: "FOSSA License & Dependency Scan",
-              desc: "Run open-source dependency and license compliance analysis",
-              tooltip: "Scans project dependencies to detect open-source licenses, security risks, policy violations, and supply chain vulnerabilities. Generates a Software Bill of Materials (SBOM) and compliance reports.",
-              icon: "📜",
-              color: "#f59e0b",
-              recommended: false
-            },
-            {
-              key: "fixBusinessLogic",
-              checked: fixBusinessLogic,
-              onChange: (checked: boolean) => setFixBusinessLogic(checked),
-              title: "Fix Business Logic Issues",
-              desc: "Automatically improve code quality and patterns",
-              tooltip: "Applies automated code improvements including null safety, performance optimizations, modern API usage, and best practice implementations. Enhances code maintainability and reduces technical debt.",
-              icon: "🛠️",
-              color: "#3b82f6",
-              recommended: true
-            }
+            { key: "runTests", checked: runTests, onChange: (c: boolean) => setRunTests(c), title: "Run Test Suite", desc: "Execute automated tests after migration", icon: "🧪", color: "#22c55e", recommended: true },
+            { key: "runSonar", checked: runSonar, onChange: (c: boolean) => { setRunSonar(c); setRunFossa(false); }, title: "SonarQube Analysis", desc: "Run code quality and security analysis", icon: "🔍", color: "#f59e0b", recommended: false },
+            { key: "runFossa", checked: runFossa, onChange: (c: boolean) => { setRunFossa(c); setRunSonar(false); }, title: "FOSSA License & Dependency Scan", desc: "Run open-source dependency and license compliance analysis", icon: "📜", color: "#f59e0b", recommended: false },
+            { key: "fixBusinessLogic", checked: fixBusinessLogic, onChange: (c: boolean) => setFixBusinessLogic(c), title: "Fix Business Logic Issues", desc: "Automatically improve code quality and patterns", icon: "🛠️", color: "#3b82f6", recommended: true }
           ].map((option) => (
-            <div key={option.key} style={{ position: "relative", height: '100%' }}>
-              <div
-              onClick={() => {
-              if (option.key === "runSonar") {
-                  setRunSonar(!runSonar);
-                  setRunFossa(false);
-                  return;
-                }
-               if (option.key === "runFossa") {
-                  setRunFossa(!runFossa);
-                  setRunSonar(false);
-                  return;
-                }
-
-              option.onChange(!option.checked);
-}}
-                style={{
-                  padding: 20,
-                  borderRadius: 12,
-                  border: `2px solid ${option.checked ? option.color : "#e2e8f0"}`,
-                  backgroundColor: option.checked ? `${option.color}08` : "#fff",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                  boxShadow: option.checked ? `0 4px 12px ${option.color}20` : "0 2px 4px rgba(0,0,0,0.05)",
-                  position: "relative",
-                  height: "100%",
-                  minHeight: 132,       
-                  display: "flex",              
-                  flexDirection: "column"         
-                }}
-                
-                onMouseEnter={(e) => {
-                  if (!option.checked) {
-                    e.currentTarget.style.borderColor = option.color;
-                    e.currentTarget.style.boxShadow = `0 4px 12px ${option.color}15`;
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!option.checked) {
-                    e.currentTarget.style.borderColor = "#e2e8f0";
-                    e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.05)";
-                  }
-                }}
-              >
+            <div key={option.key} style={{ position: "relative", height: "100%" }}>
+              <div onClick={() => option.onChange(!option.checked)} style={{ padding: 20, borderRadius: 12, border: `2px solid ${option.checked ? option.color : "#e2e8f0"}`, backgroundColor: option.checked ? `${option.color}08` : "#fff", cursor: "pointer", transition: "all 0.2s ease", boxShadow: option.checked ? `0 4px 12px ${option.color}20` : "0 2px 4px rgba(0,0,0,0.05)", position: "relative", height: "100%", minHeight: 132, display: "flex", flexDirection: "column" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
                   <span style={{ fontSize: 24 }}>{option.icon}</span>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                       <span style={{ fontSize: 16, fontWeight: 600, color: "#1e293b" }}>{option.title}</span>
-                      {option.recommended && (
-                        <span style={{
-                          fontSize: 10,
-                          padding: "2px 6px",
-                          backgroundColor: "#dcfce7",
-                          color: "#166534",
-                          borderRadius: 8,
-                          fontWeight: 600,
-                          textTransform: "uppercase"
-                        }}>
-                          Recommended
-                        </span>
-                      )}
+                      {option.recommended && <span style={{ fontSize: 10, padding: "2px 6px", backgroundColor: "#dcfce7", color: "#166534", borderRadius: 8, fontWeight: 600, textTransform: "uppercase" }}>Recommended</span>}
                     </div>
                     <div style={{ fontSize: 13, color: "#64748b" }}>{option.desc}</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 64, justifyContent: "flex-end" }}>
-                    <div style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', color: option.color, fontSize: 18, fontWeight: 700 }}>
-                      {option.checked ? '✓' : null}
+                    <div style={{ width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", color: option.color, fontSize: 18, fontWeight: 700 }}>
+                      {option.checked ? "✓" : null}
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={option.checked}
-                      onChange={(e) => option.onChange(e.target.checked)}
-                      style={{
-                        width: 18,
-                        height: 18,
-                        accentColor: option.color,
-                        cursor: "pointer"
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Info button for tooltip */}
-                <div style={{ position: "absolute", top: 12, right: 12 }}>
-                  <div
-                    style={{
-                      width: 20,
-                      height: 20,
-                      borderRadius: "50%",
-                      backgroundColor: "#e2e8f0",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "#64748b",
-                      cursor: "help"
-                    }}
-                    onMouseEnter={(e) => {
-                      const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
-                      if (tooltip) tooltip.style.display = "block";
-                    }}
-                    onMouseLeave={(e) => {
-                      const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
-                      if (tooltip) tooltip.style.display = "none";
-                    }}
-                  >
-                    i
-                  </div>
-
-                  {/* Tooltip */}
-                  <div
-                    style={{
-                      display: "none",
-                      position: "absolute",
-                      top: 28,
-                      right: 0,
-                      width: 320,
-                      backgroundColor: "#1e293b",
-                      color: "#f1f5f9",
-                      padding: "14px 18px",
-                      borderRadius: 10,
-                      fontSize: 12,
-                      lineHeight: 1.5,
-                      zIndex: 1000,
-                      boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
-                      whiteSpace: "normal"
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, marginBottom: 10, color: "#94a3b8", fontSize: 13 }}>
-                      {option.title} Details
-                    </div>
-                    <div style={{ marginBottom: 8 }}>{option.tooltip}</div>
-                    {option.recommended && (
-                      <div style={{ fontSize: 11, color: "#22c55e", fontWeight: 600, marginTop: 6 }}>
-                        💡 Recommended for most migrations
-                      </div>
-                    )}
-                    {/* Arrow */}
-                    <div style={{
-                      position: "absolute",
-                      top: -6,
-                      right: 20,
-                      width: 0,
-                      height: 0,
-                      borderLeft: "6px solid transparent",
-                      borderRight: "6px solid transparent",
-                      borderBottom: "6px solid #1e293b"
-                    }} />
+                    <input type="checkbox" checked={option.checked} onChange={(e) => option.onChange(e.target.checked)} style={{ width: 18, height: 18, accentColor: option.color, cursor: "pointer" }} />
                   </div>
                 </div>
               </div>
@@ -3289,7 +3033,7 @@ public class UserService {
       <div style={styles.btnRow}>
         <button style={styles.secondaryBtn} onClick={() => setStep(3)}>← Back</button>
         <button style={{ ...styles.primaryBtn, opacity: loading ? 0.5 : 1 }} onClick={handleStartMigration} disabled={loading}>
-          {loading ? "Migrating..." : "🚀 Migration Summary"}
+          {loading ? "Starting..." : "🚀Migration Summary "}
         </button>
       </div>
     </div>
@@ -3587,7 +3331,7 @@ public class UserService {
             <p style={styles.helpText}>Only versions newer than source are available</p>
           </div>
         </div>
-        <div style={styles.field}>
+        {/* <div style={styles.field}>
           <label style={styles.label}>Target Repository Name</label>
           <div style={{ display: "flex", gap: 8 }}>
             <input 
@@ -3603,7 +3347,7 @@ public class UserService {
               {'{repo-name}'}-java{'{version}'}-modernized
             </code>
           </p>
-        </div>
+        </div> */}
         <div style={styles.btnRow}>
           <button style={styles.secondaryBtn} onClick={() => setStep(5)}>← Back</button>
           <button style={styles.primaryBtn} onClick={() => setStep(7)}>Continue to Dependencies →</button>
@@ -5659,6 +5403,29 @@ For questions or issues:
         {step === 5 && renderMigrationAnimation()}
         {step === 6 && renderMigrationProgress()}
         {step === 7 && renderStep11()}
+        {showPreMigrationFull && repoAnalysis && (
+          <div style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999}}>
+            <div style={{ width: '90%', height: '90%', overflow: 'auto', background: '#fff', padding: 20, borderRadius: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
+                <button style={styles.secondaryBtn} onClick={() => setShowPreMigrationFull(false)}>Close</button>
+                {/* <button style={{ ...styles.primaryBtn, minWidth: 160 }} onClick={() => confirmStartMigration()} disabled={loading}>
+                  {loading ? "Starting..." : "Confirm & Start Migration"}
+                </button> */}
+              </div>
+              <PreMigrationSummary
+                repoAnalysis={repoAnalysis}
+                selectedSourceVersion={selectedSourceVersion}
+                selectedTargetVersion={selectedTargetVersion}
+                runTests={runTests}
+                runSonar={runSonar}
+                runFossa={runFossa}
+                fixBusinessLogic={fixBusinessLogic}
+                fossaResult={fossaResult}
+                fossaLoading={fossaLoading}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
