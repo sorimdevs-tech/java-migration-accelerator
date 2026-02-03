@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import "./MigrationWizard.css";
+import PreMigrationSummary from "./PreMigrationSummary";
+// import DependencyAnalysis from "./DependencyAnalysis";
 import {
   fetchRepositories,
   analyzeRepository,
@@ -48,23 +50,23 @@ const MIGRATION_STEPS = [
     id: 3,
     name: "Strategy",
     icon: "📋",
-    description: "Assessment & Migration Strategy",
+    description: "Assessment & Migration Report",
     summary: "Review assessment results and define the migration roadmap"
   },
   {
     id: 4,
     name: "Migration",
     icon: "⚡",
-    description: "Build Modernization & Migration",
+    description: "Review Modernization",
     summary: "Execute the upgrade using automation tools and refactor legacy components"
   },
-  {
-    id: 5,
-    name: "Result",
-    icon: "📊",
-    description: "Migration Results",
-    summary: "View migration report and download migrated project"
-  },
+  // {
+  //   id: 5,
+  //   name: "Summary",
+  //   icon: "📊",
+  //   description: "Migration Summary",
+  //   summary: "View migration report and download migrated project"
+  // },
 ];
 
 export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () => void }) {
@@ -109,6 +111,8 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   const [fileLoading, setFileLoading] = useState(false);
   const [pathHistory, setPathHistory] = useState<string[]>([""]);
   const [showFileExplorer, setShowFileExplorer] = useState(true);
+  const [isPrivateRepo, setIsPrivateRepo] = useState(false);
+  const [isEnterpriseRepo, setIsEnterpriseRepo] = useState(false);
   
   // High-risk project states (no pom.xml/build.gradle or unknown Java version)
   const [isHighRiskProject, setIsHighRiskProject] = useState(false);
@@ -144,6 +148,8 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   
   // Build Modernization acknowledgment
   const [migrationConfigAcknowledged, setMigrationConfigAcknowledged] = useState(false);
+  // Show full pre-migration summary modal
+  const [showPreMigrationFull, setShowPreMigrationFull] = useState(false);
 
   // Code diff viewer states for Result page
   const [codeChanges, setCodeChanges] = useState<{
@@ -254,7 +260,7 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
           setAnalysisDuration(`${minutes}m ${seconds}s`);
           
           setRepoAnalysis(analysis);
-          // mark completion so header timer remains paused/visible
+          // mark completion and finalize timer: freeze duration and clear start time
           setAnalysisCompleted(true);
           // Set detected source Java version state so UI locks or shows detected value
           if ((analysis as any)?.java_version_detected_from_build) {
@@ -359,22 +365,27 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   }, [step, selectedRepo, repoAnalysis, githubToken]);
 
   // Live analysis timer: updates `analysisDuration` every second while analysis is running
+  // Stop the timer and finalize duration once `repoAnalysis` is available.
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
+
     if (analysisStartTime && !repoAnalysis) {
-      interval = setInterval(() => {
-        const ms = Date.now() - analysisStartTime;
+      const update = () => {
+        const ms = Date.now() - (analysisStartTime as number);
         const minutes = Math.floor(ms / 60000);
         const seconds = Math.floor((ms % 60000) / 1000);
         setAnalysisDuration(`${minutes}m ${seconds}s`);
-      }, 1000);
-    } else if (analysisStartTime && repoAnalysis) {
-      // final duration - ensure it's set when analysis finishes
-      const ms = Date.now() - analysisStartTime;
+      };
+      update();
+      interval = setInterval(update, 1000);
+    } else if (repoAnalysis && analysisStartTime) {
+      // Finalize duration once analysis finishes and stop the live timer
+      const ms = Date.now() - (analysisStartTime as number);
       const minutes = Math.floor(ms / 60000);
       const seconds = Math.floor((ms % 60000) / 1000);
       setAnalysisDuration(`${minutes}m ${seconds}s`);
-      // keep analysisStartTime intact for potential debugging; could clear if desired
+      setAnalysisStartTime(null);
+      setAnalysisCompleted(true);
     }
 
     return () => { if (interval) clearInterval(interval); };
@@ -650,7 +661,13 @@ public class UserService {
     );
   };
 
+  // When user clicks "Start Migration" show pre-migration summary modal first.
   const handleStartMigration = () => {
+    setShowPreMigrationFull(true);
+  };
+
+  // Actual migration starter, called after user confirms on the pre-migration summary modal
+  const confirmStartMigration = () => {
     if (!selectedRepo && !repoUrl) {
       setError("Please select a repository or enter a repository URL");
       return;
@@ -670,8 +687,8 @@ public class UserService {
 
     // Detect platform based on URL
     const detectPlatform = (url: string) => {
-      if (url.includes('gitlab.com')) return 'gitlab';
-      if (url.includes('github.com')) return 'github';
+      if (url?.includes('gitlab.com')) return 'gitlab';
+      if (url?.includes('github.com')) return 'github';
       return 'github'; // default
     };
 
@@ -695,6 +712,7 @@ public class UserService {
     startMigration(migrationRequest)
       .then((job) => {
         setMigrationJob(job);
+        setShowPreMigrationFull(false);
         setStep(5); // Go to Migration Progress step
       })
       .catch((err) => {
@@ -817,6 +835,18 @@ public class UserService {
     </div>
   );
 
+  // Detect if URL is enterprise GitHub (github.<custom>.com) or GitLab
+  const detectPrivateOrEnterprise = (url: string): { isPrivate: boolean; isEnterprise: boolean } => {
+    if (!url) return { isPrivate: false, isEnterprise: false };
+    
+    // Enterprise GitHub: github.<anything>.com (not github.com)
+    const isEnterprise = /^https?:\/\/(www\.)?github\.([^.]+)\.com\//i.test(url) || /^https?:\/\/(www\.)?gitlab\.com\//i.test(url);
+    
+    // For now, assume enterprise URLs need a token; public github.com URLs don't require it
+    // To properly detect private vs public would require API calls
+    return { isPrivate: false, isEnterprise };
+  };
+
   const normalizeGithubUrl = (url: string): { valid: boolean; normalizedUrl: string; message: string } => {
     if (!url.trim()) {
       return { valid: false, normalizedUrl: "", message: "URL is required" };
@@ -860,7 +890,6 @@ public class UserService {
 
   const renderStep1 = () => {
     const urlValidation = repoUrl ? normalizeGithubUrl(repoUrl) : { valid: false, normalizedUrl: "", message: "" };
-    const showEnterpriseToken = repoUrl && isEnterpriseGithub(urlValidation.normalizedUrl || repoUrl);
     return (
       <div style={styles.card}>
         <div style={styles.stepHeader}>
@@ -947,25 +976,41 @@ public class UserService {
             style={{ ...styles.input, borderColor: urlValidation.valid ? '#22c55e' : repoUrl ? '#ef4444' : '#e2e8f0' }}
             value={repoUrl}
             onChange={(e) => {
-              setRepoUrl(e.target.value);
+              const newUrl = e.target.value;
+              setRepoUrl(newUrl);
+              // Detect if URL is private or enterprise
+              const { isPrivate, isEnterprise } = detectPrivateOrEnterprise(newUrl);
+              setIsPrivateRepo(isPrivate);
+              setIsEnterpriseRepo(isEnterprise);
               setSelectedRepo(null);
               setRepoAnalysis(null);
             }}
             placeholder="https://github.com/owner/repository"
           />
-          {showEnterpriseToken && (
+          {/* Show access token field only for private or enterprise repositories */}
+          {repoUrl && urlValidation.valid && (
             <div style={{ marginTop: 16 }}>
-              <label style={{ ...styles.label, fontWeight: 500 }}>Personal Access Token (required for GitHub Enterprise)</label>
+              <label style={{ ...styles.label, fontWeight: 500 }}>
+                Personal Access Token {isPrivateRepo || isEnterpriseRepo ? '(required)' : '(optional)'}
+              </label>
               <input
                 type="password"
                 style={{ ...styles.input, borderColor: githubToken ? '#22c55e' : '#e2e8f0' }}
                 value={githubToken}
                 onChange={e => setGithubToken(e.target.value)}
-                placeholder="Paste your GitHub Enterprise PAT here"
+                placeholder="Paste your GitHub personal access token here"
                 autoComplete="off"
               />
               <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
-                Required for private/enterprise repos. <a href="https://docs.github.com/en/enterprise-server@3.0/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token" target="_blank" rel="noopener noreferrer">How to create a PAT?</a>
+                {isPrivateRepo || isEnterpriseRepo ? (
+                  <>
+                    <strong>Required</strong> to access {isEnterpriseRepo ? 'enterprise' : 'private'} repositories. <a href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token" target="_blank" rel="noopener noreferrer">How to create a PAT?</a>
+                  </>
+                ) : (
+                  <>
+                    <strong>Optional</strong> but recommended. Using a token increases GitHub API rate limits and ensures access to your repositories. <a href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token" target="_blank" rel="noopener noreferrer">Learn more</a>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -1118,20 +1163,19 @@ public class UserService {
         {/* Right-aligned live timer in header (highlighted area) */}
         {(analysisStartTime || analysisCompleted || (repoAnalysis && analysisDuration && analysisDuration !== "0m 0s")) && (
           <div style={{ marginLeft: "auto", alignSelf: "center", display: "flex", gap: 8, alignItems: "center" }}>
-            {analysisStartTime && !repoAnalysis ? (
+            {analysisStartTime ? (
               <div style={{ padding: "6px 10px", background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 8, color: "#92400e", fontSize: 13 }}>
                 ⏳ Analyzing — {analysisDuration}
+              </div>
+            ) : analysisCompleted ? (
+              <div style={{ padding: "6px 10px", background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 8, color: "#92400e", fontSize: 13 }}>
+                ✅ Analysis completed — {analysisDuration}
               </div>
             ) : repoAnalysis ? (
               <div style={{ padding: "6px 10px", background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 8, color: "#0369a1", fontSize: 13 }}>
                 ⏱️ Completed — {analysisDuration}
               </div>
-            ) : (
-              // analysisCompleted true but no repoAnalysis (paused/failed)
-              <div style={{ padding: "6px 10px", background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: 8, color: "#92400e", fontSize: 13 }}>
-                ✅ Analysis completed — {analysisDuration}
-              </div>
-            )}
+            ) : null}
           </div>
         )}
       </div>
@@ -1194,8 +1238,8 @@ public class UserService {
                 </div>
               ) : null}
 
-              {/* Java project but no framework detected */}
-              {isJavaProject && detectedFrameworks.length === 0 && (
+{/* Java project but no framework detected - Hide for Maven/Gradle projects */}
+              {isJavaProject && detectedFrameworks.length === 0 && !repoAnalysis?.structure?.has_pom_xml && !repoAnalysis?.structure?.has_build_gradle && (
                 <div style={{
                   background: "#fef9c3",
                   border: "2px solid #facc15",
@@ -1722,6 +1766,17 @@ public class UserService {
                           <span>Repository analysis completed in <strong>{analysisDuration}</strong></span>
                         </div>
                       )}
+
+                      {/* Dependency Analysis Component - DISABLED TEMPORARILY */}
+                      {/* {repoAnalysis && repoAnalysis.dependencies && repoAnalysis.dependencies.length > 0 && (
+                        <div style={{ marginBottom: 24 }}>
+                          <DependencyAnalysis 
+                            dependencies={repoAnalysis.dependencies}
+                            summary={(repoAnalysis as any).dependency_summary}
+                            javaVersion={repoAnalysis.java_version || undefined}
+                          />
+                        </div>
+                      )} */}
                       
                   {/* GitHub-like File Explorer */}
                   <div style={styles.sectionTitle}>📂 Repository Files</div>
@@ -2441,7 +2496,7 @@ public class UserService {
       <div style={styles.stepHeader}>
         <span style={styles.stepIcon}>📋</span>
         <div>
-          <h2 style={styles.title}>Assessment & Migration Strategy</h2>
+          <h2 style={styles.title}>Assessment & Migration </h2>
           <p style={styles.subtitle}>{MIGRATION_STEPS[2].summary}</p>
         </div>
       </div>
@@ -2869,24 +2924,6 @@ public class UserService {
           </div>
         </div>
 
-      <div style={styles.field}>
-        <label style={styles.label}>Target Repository Name</label>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input 
-            type="text" 
-            style={{ ...styles.input, flex: 1, backgroundColor: "#f0fdf4", borderColor: "#22c55e" }} 
-            value={targetRepoName} 
-            onChange={(e) => setTargetRepoName(e.target.value)} 
-            placeholder={`${selectedRepo?.name || "repo"}-java${selectedTargetVersion}-modernized`} 
-          />
-        </div>
-        <p style={styles.helpText}>
-          Format: <code style={{ backgroundColor: "#f1f5f9", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>
-            {'{repo-name}'}-java{'{version}'}-modernized
-          </code> (auto-generated, editable)
-        </p>
-      </div>
-
       <div style={styles.btnRow}>
         <button style={styles.secondaryBtn} onClick={() => setStep(2)}>← Back</button>
         <button
@@ -2894,11 +2931,14 @@ public class UserService {
           onClick={() => selectedTargetVersion && setStep(4)}
           disabled={!selectedTargetVersion}
         >
-          Continue to Migration →
+          Continue to Review →
         </button>
       </div>
     </div>
   );
+
+  /* First (older) migration step removed — consolidated below. */
+
 
   // Consolidated Step 4: Migration (Build Modernization & Refactor + Code Migration + Testing)
   const renderMigrationStep = () => (
@@ -2911,9 +2951,6 @@ public class UserService {
         </div>
       </div>
 
-      {/* Show what we plan to modernize */}
-      <div style={styles.sectionTitle}>🎯 Migration Configuration</div>
-
       {/* What we'll modernize - Card Design */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b", marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
@@ -2921,94 +2958,23 @@ public class UserService {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
           {[
-            {
-              icon: "☕",
-              title: "Java Version Upgrade",
-              desc: `From Java ${selectedSourceVersion} to Java ${selectedTargetVersion}`,
-              color: "#2563eb"
-            },
-            {
-              icon: "🔧",
-              title: "Code Refactoring",
-              desc: "Modernize code patterns and best practices",
-              color: "#059669"
-            },
-            {
-              icon: "📦",
-              title: "Dependencies",
-              desc: "Update and ensure compatibility",
-              color: "#7c3aed"
-            },
-            {
-              icon: "🧠",
-              title: "Business Logic",
-              desc: "Improve performance and reliability",
-              color: "#dc2626"
-            },
-            {
-              icon: "🧪",
-              title: "Testing",
-              desc: "Execute and validate test suites",
-              color: "#ea580c"
-            },
-            {
-              icon: "🔍",
-              title: "Code Quality",
-              desc: "Analysis and improvement",
-              color: "#0891b2"
-            }
+            { icon: "🛠️", title: "Code Refactor & Quality", desc: "Modernize code patterns and improve code quality", color: "#059669" },
+            { icon: "📦", title: "Dependencies", desc: "Update dependencies and ensure compatibility", color: "#7c3aed" },
+            { icon: "🧠", title: "Business Logic", desc: "Improve performance and ensure reliability", color: "#dc2626" },
+            { icon: "🧪", title: "Testing", desc: "Execute test suites and validate test suites", color: "#ea580c" }
           ].map((item, idx) => (
-            <div
-              key={idx}
-              style={{
-                padding: 20,
-                backgroundColor: "#fff",
-                border: "1px solid #e2e8f0",
-                borderRadius: 12,
-                boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
-                transition: "all 0.2s ease",
-                cursor: "default"
-              }}
-            >
+            <div key={idx} style={{ padding: 20, backgroundColor: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, boxShadow: "0 2px 4px rgba(0,0,0,0.05)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
-                <div style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 12,
-                  backgroundColor: `${item.color}10`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 20
-                }}>
+                <div style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: `${item.color}10`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
                   {item.icon}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b", marginBottom: 4 }}>
-                    {item.title}
-                  </div>
-                  <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.4 }}>
-                    {item.desc}
-                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b", marginBottom: 4 }}>{item.title}</div>
+                  <div style={{ fontSize: 13, color: "#64748b" }}>{item.desc}</div>
                 </div>
               </div>
-              <div style={{
-                width: "100%",
-                height: 4,
-                backgroundColor: `${item.color}20`,
-                borderRadius: 2,
-                position: "relative",
-                overflow: "hidden"
-              }}>
-                <div style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: "100%",
-                  backgroundColor: item.color,
-                  borderRadius: 2
-                }} />
+              <div style={{ width: "100%", height: 4, backgroundColor: `${item.color}20`, borderRadius: 2, overflow: "hidden" }}>
+                <div style={{ width: "100%", height: "100%", backgroundColor: item.color }} />
               </div>
             </div>
           ))}
@@ -3017,9 +2983,7 @@ public class UserService {
 
       <div style={styles.field}>
         <label style={styles.label}>Conversion Types</label>
-        <select style={styles.select} value={selectedConversions[0] || ""} onChange={(e) => {
-          setSelectedConversions(e.target.value ? [e.target.value] : []);
-        }}>
+        <select style={styles.select} value={selectedConversions[0] || ""} onChange={(e) => setSelectedConversions(e.target.value ? [e.target.value] : [])}>
           <option value="">-- Select Conversion Type --</option>
           {conversionTypes.map((ct) => (
             <option key={ct.id} value={ct.id}>{ct.name} - {ct.description}</option>
@@ -3027,219 +2991,37 @@ public class UserService {
         </select>
         {selectedConversions.length > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", backgroundColor: "#dbeafe", border: "1px solid #93c5fd", borderRadius: 8, marginTop: 12 }}>
-            <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: "#0c4a6e" }}>
-              ✓ {conversionTypes.find((c) => c.id === selectedConversions[0])?.name} selected
-            </span>
+            <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: "#0c4a6e" }}>✓ {conversionTypes.find((c) => c.id === selectedConversions[0])?.name} selected</span>
             <button style={{ background: "none", border: "none", color: "#0c4a6e", cursor: "pointer", fontSize: 18, padding: 0 }} onClick={() => setSelectedConversions([])}>×</button>
           </div>
         )}
       </div>
 
-      {/* Potential Compatibility Issues - COMMENTED OUT */}
-      {/* <div style={styles.field}>
-        <label style={styles.label}>Potential Compatibility Issues</label>
-        [Content commented out - showing compatibility matrix instead]
-      </div> */}
-
       <div style={styles.field}>
         <label style={styles.label}>Migration Options</label>
-        <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px", alignItems: 'stretch'}}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px", alignItems: "stretch" }}>
           {[
-            {
-              key: "runTests",
-              checked: runTests,
-              onChange: (checked: boolean) => setRunTests(checked),
-              title: "Run Test Suite",
-              desc: "Execute automated tests after migration",
-              tooltip: "Runs the project's test suite to ensure all functionality works correctly after migration. Includes unit tests, integration tests, and any configured test frameworks. Highly recommended to verify migration success.",
-              icon: "🧪",
-              color: "#22c55e",
-              recommended: true
-            },
-            {
-              key: "runSonar",   
-              checked: runSonar,
-              onChange: (checked: boolean) => setRunSonar(checked),
-              title: "SonarQube Analysis",
-              desc: "Run code quality and security analysis",
-              tooltip: "Performs comprehensive code quality analysis using SonarQube. Checks for bugs, vulnerabilities, code smells, test coverage, and maintainability metrics. Provides detailed quality gate status.",
-              icon: "🔍",
-              color: "#f59e0b",
-              recommended: false
-            },
-            {
-              key: "runFossa",
-              checked: runFossa,
-              onChange: (checked: boolean) => setRunFossa(checked),
-              title: "FOSSA License & Dependency Scan",
-              desc: "Run open-source dependency and license compliance analysis",
-              tooltip: "Scans project dependencies to detect open-source licenses, security risks, policy violations, and supply chain vulnerabilities. Generates a Software Bill of Materials (SBOM) and compliance reports.",
-              icon: "📜",
-              color: "#f59e0b",
-              recommended: false
-            },
-            {
-              key: "fixBusinessLogic",
-              checked: fixBusinessLogic,
-              onChange: (checked: boolean) => setFixBusinessLogic(checked),
-              title: "Fix Business Logic Issues",
-              desc: "Automatically improve code quality and patterns",
-              tooltip: "Applies automated code improvements including null safety, performance optimizations, modern API usage, and best practice implementations. Enhances code maintainability and reduces technical debt.",
-              icon: "🛠️",
-              color: "#3b82f6",
-              recommended: true
-            }
+            { key: "runTests", checked: runTests, onChange: (c: boolean) => setRunTests(c), title: "Run Test Suite", desc: "Execute automated tests after migration", icon: "🧪", color: "#22c55e", recommended: true },
+            { key: "runSonar", checked: runSonar, onChange: (c: boolean) => { setRunSonar(c); setRunFossa(false); }, title: "SonarQube Analysis", desc: "Run code quality and security analysis", icon: "🔍", color: "#f59e0b", recommended: false },
+            { key: "runFossa", checked: runFossa, onChange: (c: boolean) => { setRunFossa(c); setRunSonar(false); }, title: "FOSSA License & Dependency Scan", desc: "Run open-source dependency and license compliance analysis", icon: "📜", color: "#f59e0b", recommended: false },
+            { key: "fixBusinessLogic", checked: fixBusinessLogic, onChange: (c: boolean) => setFixBusinessLogic(c), title: "Fix Business Logic Issues", desc: "Automatically improve code quality and patterns", icon: "🛠️", color: "#3b82f6", recommended: true }
           ].map((option) => (
-            <div key={option.key} style={{ position: "relative", height: '100%' }}>
-              <div
-              onClick={() => {
-              if (option.key === "runSonar") {
-                  setRunSonar(!runSonar);
-                  setRunFossa(false);
-                  return;
-                }
-               if (option.key === "runFossa") {
-                  setRunFossa(!runFossa);
-                  setRunSonar(false);
-                  return;
-                }
-
-              option.onChange(!option.checked);
-}}
-                style={{
-                  padding: 20,
-                  borderRadius: 12,
-                  border: `2px solid ${option.checked ? option.color : "#e2e8f0"}`,
-                  backgroundColor: option.checked ? `${option.color}08` : "#fff",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                  boxShadow: option.checked ? `0 4px 12px ${option.color}20` : "0 2px 4px rgba(0,0,0,0.05)",
-                  position: "relative",
-                  height: "100%",
-                  minHeight: 132,       
-                  display: "flex",              
-                  flexDirection: "column"         
-                }}
-                
-                onMouseEnter={(e) => {
-                  if (!option.checked) {
-                    e.currentTarget.style.borderColor = option.color;
-                    e.currentTarget.style.boxShadow = `0 4px 12px ${option.color}15`;
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!option.checked) {
-                    e.currentTarget.style.borderColor = "#e2e8f0";
-                    e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.05)";
-                  }
-                }}
-              >
+            <div key={option.key} style={{ position: "relative", height: "100%" }}>
+              <div onClick={() => option.onChange(!option.checked)} style={{ padding: 20, borderRadius: 12, border: `2px solid ${option.checked ? option.color : "#e2e8f0"}`, backgroundColor: option.checked ? `${option.color}08` : "#fff", cursor: "pointer", transition: "all 0.2s ease", boxShadow: option.checked ? `0 4px 12px ${option.color}20` : "0 2px 4px rgba(0,0,0,0.05)", position: "relative", height: "100%", minHeight: 132, display: "flex", flexDirection: "column" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
                   <span style={{ fontSize: 24 }}>{option.icon}</span>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                       <span style={{ fontSize: 16, fontWeight: 600, color: "#1e293b" }}>{option.title}</span>
-                      {option.recommended && (
-                        <span style={{
-                          fontSize: 10,
-                          padding: "2px 6px",
-                          backgroundColor: "#dcfce7",
-                          color: "#166534",
-                          borderRadius: 8,
-                          fontWeight: 600,
-                          textTransform: "uppercase"
-                        }}>
-                          Recommended
-                        </span>
-                      )}
+                      {option.recommended && <span style={{ fontSize: 10, padding: "2px 6px", backgroundColor: "#dcfce7", color: "#166534", borderRadius: 8, fontWeight: 600, textTransform: "uppercase" }}>Recommended</span>}
                     </div>
                     <div style={{ fontSize: 13, color: "#64748b" }}>{option.desc}</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 64, justifyContent: "flex-end" }}>
-                    <div style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', color: option.color, fontSize: 18, fontWeight: 700 }}>
-                      {option.checked ? '✓' : null}
+                    <div style={{ width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", color: option.color, fontSize: 18, fontWeight: 700 }}>
+                      {option.checked ? "✓" : null}
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={option.checked}
-                      onChange={(e) => option.onChange(e.target.checked)}
-                      style={{
-                        width: 18,
-                        height: 18,
-                        accentColor: option.color,
-                        cursor: "pointer"
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Info button for tooltip */}
-                <div style={{ position: "absolute", top: 12, right: 12 }}>
-                  <div
-                    style={{
-                      width: 20,
-                      height: 20,
-                      borderRadius: "50%",
-                      backgroundColor: "#e2e8f0",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "#64748b",
-                      cursor: "help"
-                    }}
-                    onMouseEnter={(e) => {
-                      const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
-                      if (tooltip) tooltip.style.display = "block";
-                    }}
-                    onMouseLeave={(e) => {
-                      const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
-                      if (tooltip) tooltip.style.display = "none";
-                    }}
-                  >
-                    i
-                  </div>
-
-                  {/* Tooltip */}
-                  <div
-                    style={{
-                      display: "none",
-                      position: "absolute",
-                      top: 28,
-                      right: 0,
-                      width: 320,
-                      backgroundColor: "#1e293b",
-                      color: "#f1f5f9",
-                      padding: "14px 18px",
-                      borderRadius: 10,
-                      fontSize: 12,
-                      lineHeight: 1.5,
-                      zIndex: 1000,
-                      boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
-                      whiteSpace: "normal"
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, marginBottom: 10, color: "#94a3b8", fontSize: 13 }}>
-                      {option.title} Details
-                    </div>
-                    <div style={{ marginBottom: 8 }}>{option.tooltip}</div>
-                    {option.recommended && (
-                      <div style={{ fontSize: 11, color: "#22c55e", fontWeight: 600, marginTop: 6 }}>
-                        💡 Recommended for most migrations
-                      </div>
-                    )}
-                    {/* Arrow */}
-                    <div style={{
-                      position: "absolute",
-                      top: -6,
-                      right: 20,
-                      width: 0,
-                      height: 0,
-                      borderLeft: "6px solid transparent",
-                      borderRight: "6px solid transparent",
-                      borderBottom: "6px solid #1e293b"
-                    }} />
+                    <input type="checkbox" checked={option.checked} onChange={(e) => option.onChange(e.target.checked)} style={{ width: 18, height: 18, accentColor: option.color, cursor: "pointer" }} />
                   </div>
                 </div>
               </div>
@@ -3251,7 +3033,7 @@ public class UserService {
       <div style={styles.btnRow}>
         <button style={styles.secondaryBtn} onClick={() => setStep(3)}>← Back</button>
         <button style={{ ...styles.primaryBtn, opacity: loading ? 0.5 : 1 }} onClick={handleStartMigration} disabled={loading}>
-          {loading ? "Starting..." : "🚀 Start Migration"}
+          {loading ? "Starting..." : "🚀Migration Summary "}
         </button>
       </div>
     </div>
@@ -3549,7 +3331,7 @@ public class UserService {
             <p style={styles.helpText}>Only versions newer than source are available</p>
           </div>
         </div>
-        <div style={styles.field}>
+        {/* <div style={styles.field}>
           <label style={styles.label}>Target Repository Name</label>
           <div style={{ display: "flex", gap: 8 }}>
             <input 
@@ -3565,7 +3347,7 @@ public class UserService {
               {'{repo-name}'}-java{'{version}'}-modernized
             </code>
           </p>
-        </div>
+        </div> */}
         <div style={styles.btnRow}>
           <button style={styles.secondaryBtn} onClick={() => setStep(5)}>← Back</button>
           <button style={styles.primaryBtn} onClick={() => setStep(7)}>Continue to Dependencies →</button>
@@ -5125,486 +4907,7 @@ public class UserService {
         </div>
       )}
 
-      {/* Download Buttons */}
-      <div style={styles.btnRow}>
-        <button
-          style={{ ...styles.secondaryBtn, marginRight: 10 }}
-          onClick={() => {
-            if (migrationJob) {
-              const zipUrl = `${API_BASE_URL}/migration/${migrationJob.job_id}/download-zip`;
-              const link = document.createElement('a');
-              link.href = zipUrl;
-              link.download = `migrated-project-${migrationJob.job_id}.zip`;
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-            }
-          }}
-        >
-          📦 Download Migrated Project (ZIP)
-        </button>
-        <button
-          style={{ ...styles.secondaryBtn, marginRight: 10 }}
-          onClick={() => {
-            if (migrationJob) {
-              const reportUrl = `${API_BASE_URL}/migration/${migrationJob.job_id}/report`;
-              window.open(reportUrl, '_blank');
-            }
-          }}
-        >
-          📥 Download Full Report
-        </button>
-        <button
-          style={{ ...styles.secondaryBtn, marginRight: 10 }}
-          onClick={() => {
-            if (migrationJob) {
-              // Generate README.md content
-              const readmeContent = `# Migration Report
-
-## 📋 Overview
-
-This project has been automatically migrated from **Java ${migrationJob.source_java_version}** to **Java ${migrationJob.target_java_version}** using the Java Migration Accelerator.
-
-**Migration Date:** ${migrationJob.completed_at ? new Date(migrationJob.completed_at).toLocaleDateString() : 'In Progress'}  
-**Status:** ${migrationJob.status === 'completed' ? '✅ Completed' : '🔄 ' + migrationJob.status}
-
----
-
-## 🏗️ Repository Information
-
-| Property | Value |
-|----------|-------|
-| Source Repository | ${migrationJob.source_repo} |
-| Target Repository | ${migrationJob.target_repo || 'N/A'} |
-| Java Version | ${migrationJob.source_java_version} → ${migrationJob.target_java_version} |
-
----
-
-## 📊 Migration Summary
-
-| Metric | Count |
-|--------|-------|
-| Files Modified | ${migrationJob.files_modified} |
-| Issues Fixed | ${migrationJob.issues_fixed} |
-| Dependencies Upgraded | ${migrationJob.dependencies?.filter(d => d.status === 'upgraded').length || 0} |
-| Errors Fixed | ${migrationJob.errors_fixed || 0} |
-| Remaining Errors | ${migrationJob.total_errors} |
-| Warnings | ${migrationJob.total_warnings} |
-
----
-
-## 📦 Dependencies Updated
-
-${migrationJob.dependencies && migrationJob.dependencies.length > 0 ? 
-migrationJob.dependencies.map(dep => `- **${dep.group_id}:${dep.artifact_id}** - ${dep.current_version} → ${dep.new_version || 'latest'} (${dep.status})`).join('\n') 
-: 'No dependencies were updated.'}
-
----
-
-## 🔍 SonarQube Code Quality
-
-| Metric | Value |
-|--------|-------|
-| Quality Gate | ${migrationJob.sonarqube_results?.quality_gate ?? migrationJob.sonar_quality_gate ?? 'N/A'} |
-| Code Coverage | ${(migrationJob.sonarqube_results?.coverage ?? migrationJob.sonar_coverage ?? 0)}% |
-| Bugs | ${migrationJob.sonarqube_results?.bugs ?? migrationJob.sonar_bugs ?? 0} |
-| Vulnerabilities | ${migrationJob.sonarqube_results?.vulnerabilities ?? migrationJob.sonar_vulnerabilities ?? 0} |
-| Code Smells | ${migrationJob.sonarqube_results?.code_smells ?? migrationJob.sonar_code_smells ?? 0} |
-
----
-
-## 🧪 Test Results
-
-- **Tests Run:** 10
-- **Tests Passed:** 10
-- **Tests Failed:** 0
-- **Success Rate:** 100%
-
----
-
-## 🚀 API Validation
-
-| Metric | Value |
-|--------|-------|
-| Endpoints Tested | ${migrationJob.api_endpoints_validated} |
-| Working Endpoints | ${migrationJob.api_endpoints_working}/${migrationJob.api_endpoints_validated} |
-| Average Response Time | 245ms |
-| Throughput | 150 req/sec |
-
----
-
-## 📜 FOSSA License & Dependency Scan
-
-| Metric | Value |
-|--------|-------|
-| Policy Status | ${migrationJob?.fossa_policy_status || 'N/A'} |
-| Total Dependencies | ${migrationJob?.fossa_total_dependencies ?? 'N/A'} |
-| License Issues | ${migrationJob?.fossa_license_issues ?? 0} |
-| Vulnerabilities | ${migrationJob?.fossa_vulnerabilities ?? 0} |
-| Outdated Packages | ${migrationJob?.fossa_outdated_dependencies ?? 0} |
-
-
-## 🛡️ Business Logic Improvements
-
-- ✅ **Null Safety** - Added null checks and Objects.equals() usage
-- ✅ **Performance** - Optimized String operations and collections
-- ✅ **Code Quality** - Improved exception handling and logging
-- ✅ **Modern APIs** - Updated to use latest Java APIs and patterns
-
----
-
-## 📝 Migration Log
-
-\`\`\`
-${migrationLogs.length > 0 ? migrationLogs.join('\n') : 'No migration logs available'}
-\`\`\`
-
----
-
-## ⚠️ Known Issues
-
-${migrationJob.issues && migrationJob.issues.length > 0 ? 
-migrationJob.issues.slice(0, 10).map(issue => `- [${issue.severity.toUpperCase()}] ${issue.message} (${issue.file_path}:${issue.line_number})`).join('\n') 
-: 'No known issues.'}
-
----
-
-*Generated by Java Migration Accelerator on ${new Date().toLocaleString()}*
-`;
-
-              // Create and download the README file
-              const blob = new Blob([readmeContent], { type: 'text/markdown' });
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = 'MIGRATION_REPORT.md';
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-              URL.revokeObjectURL(url);
-            }
-          }}
-        >
-          📄 Download Migration Report
-        </button>
-        <button
-          style={{ ...styles.secondaryBtn, marginRight: 10 }}
-          onClick={() => {
-            if (migrationJob) {
-              // Generate comprehensive README.md for modernized application
-              const projectReadme = `# ${selectedRepo?.name || 'Modernized Application'}
-
-[![Java Version](https://img.shields.io/badge/Java-${migrationJob.target_java_version}-orange.svg)](https://openjdk.org/)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Code Quality](https://img.shields.io/badge/quality-${migrationJob.sonar_quality_gate || 'A'}-brightgreen.svg)]()
-[![Coverage](https://img.shields.io/badge/coverage-${migrationJob.sonar_coverage}%25-green.svg)]()
-
-> 🚀 **This application has been modernized to Java ${migrationJob.target_java_version}** using the Java Migration Accelerator.
-
----
-
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Prerequisites](#prerequisites)
-- [Getting Started](#getting-started)
-- [Project Structure](#project-structure)
-- [Configuration](#configuration)
-- [Building the Project](#building-the-project)
-- [Running the Application](#running-the-project)
-- [Testing](#testing)
-- [API Documentation](#api-documentation)
-- [Migration Notes](#migration-notes)
-- [Contributing](#contributing)
-- [License](#license)
-
----
-
-## 🎯 Overview
-
-This project has been successfully modernized from **Java ${migrationJob.source_java_version}** to **Java ${migrationJob.target_java_version}**, bringing the following improvements:
-
-- ✅ **Modern Java Features** - Utilizing latest Java ${migrationJob.target_java_version} capabilities
-- ✅ **Updated Dependencies** - ${migrationJob.dependencies?.filter(d => d.status === 'upgraded').length || 0} dependencies upgraded
-- ✅ **Code Quality** - ${migrationJob.sonar_bugs} bugs, ${migrationJob.sonar_vulnerabilities} vulnerabilities
-- ✅ **Test Coverage** - ${migrationJob.sonar_coverage}% code coverage maintained
-- ✅ **Performance Optimized** - Modern APIs and patterns implemented
-${isHighRiskProject ? `
-> ⚠️ **Note:** This was a high-risk migration. The project was missing standard configuration files (pom.xml/build.gradle) and/or had unknown Java version. A standard Maven project structure has been created.
-` : ''}
----
-
-## 🛠️ Detected Frameworks & Libraries
-
-${detectedFrameworks.length > 0 ? 
-detectedFrameworks.map(fw => `| **${fw.name}** | ${fw.type} | \`${fw.path}\` |`).join('\n')
-: '| No frameworks detected | - | - |'}
-
----
-
-## 📦 Prerequisites
-
-Before you begin, ensure you have the following installed:
-
-- **Java Development Kit (JDK) ${migrationJob.target_java_version}+**
-  \`\`\`bash
-  java --version
-  # Should output: openjdk ${migrationJob.target_java_version}.x.x or higher
-  \`\`\`
-
-- **Maven 3.8+** (if using Maven)
-  \`\`\`bash
-  mvn --version
-  \`\`\`
-
-- **Gradle 8.0+** (if using Gradle)
-  \`\`\`bash
-  gradle --version
-  \`\`\`
-
----
-
-## 🚀 Getting Started
-
-### Clone the Repository
-
-\`\`\`bash
-git clone ${migrationJob.target_repo || migrationJob.source_repo}
-cd ${selectedRepo?.name || 'project-name'}
-\`\`\`
-
-### Install Dependencies
-
-**Using Maven:**
-\`\`\`bash
-mvn clean install
-\`\`\`
-
-**Using Gradle:**
-\`\`\`bash
-./gradlew build
-\`\`\`
-
----
-
-## 📁 Project Structure
-
-\`\`\`
-${selectedRepo?.name || 'project'}/
-├── src/
-│   ├── main/
-│   │   ├── java/          # Application source code
-│   │   └── resources/     # Configuration files
-│   └── test/
-│       └── java/          # Unit and integration tests
-├── pom.xml               # Maven configuration
-├── README.md             # This file
-└── ...
-\`\`\`
-
----
-
-## ⚙️ Configuration
-
-### Application Properties
-
-Configure the application by editing \`src/main/resources/application.properties\`:
-
-\`\`\`properties
-# Server Configuration
-server.port=8080
-
-# Database Configuration (if applicable)
-# spring.datasource.url=jdbc:postgresql://localhost:5432/dbname
-# spring.datasource.username=user
-# spring.datasource.password=password
-
-# Logging
-logging.level.root=INFO
-\`\`\`
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| \`JAVA_HOME\` | JDK installation path | - |
-| \`APP_PORT\` | Application port | 8080 |
-| \`LOG_LEVEL\` | Logging level | INFO |
-
----
-
-## 🔨 Building the Project
-
-### Development Build
-
-\`\`\`bash
-# Maven
-mvn clean compile
-
-# Gradle
-./gradlew compileJava
-\`\`\`
-
-### Production Build
-
-\`\`\`bash
-# Maven - creates executable JAR
-mvn clean package -DskipTests
-
-# Gradle - creates executable JAR
-./gradlew bootJar
-\`\`\`
-
----
-
-## ▶️ Running the Application
-
-### Development Mode
-
-\`\`\`bash
-# Maven
-mvn spring-boot:run
-
-# Gradle
-./gradlew bootRun
-\`\`\`
-
-### Production Mode
-
-\`\`\`bash
-java -jar target/*.jar
-\`\`\`
-
-### Docker (Optional)
-
-\`\`\`bash
-# Build Docker image
-docker build -t ${selectedRepo?.name || 'app'}:latest .
-
-# Run container
-docker run -p 8080:8080 ${selectedRepo?.name || 'app'}:latest
-\`\`\`
-
----
-
-## 🧪 Testing
-
-### Run All Tests
-
-\`\`\`bash
-# Maven
-mvn test
-
-# Gradle
-./gradlew test
-\`\`\`
-
-### Run Specific Tests
-
-\`\`\`bash
-# Maven
-mvn test -Dtest=ClassName
-
-# Gradle
-./gradlew test --tests "ClassName"
-\`\`\`
-
-### Generate Test Coverage Report
-
-\`\`\`bash
-# Maven with JaCoCo
-mvn jacoco:report
-
-# View report at: target/site/jacoco/index.html
-\`\`\`
-
----
-
-## 📚 API Documentation
-
-Once the application is running, access the API documentation at:
-
-- **Swagger UI:** \`http://localhost:8080/swagger-ui.html\`
-- **OpenAPI Spec:** \`http://localhost:8080/v3/api-docs\`
-
----
-
-## 📝 Migration Notes
-
-### Changes from Java ${migrationJob.source_java_version}
-
-| Category | Changes Made |
-|----------|--------------|
-| **Files Modified** | ${migrationJob.files_modified} |
-| **Issues Fixed** | ${migrationJob.issues_fixed} |
-| **Dependencies Updated** | ${migrationJob.dependencies?.filter(d => d.status === 'upgraded').length || 0} |
-
-### Updated Dependencies
-
-${migrationJob.dependencies && migrationJob.dependencies.length > 0 ? 
-migrationJob.dependencies.filter(d => d.status === 'upgraded').slice(0, 10).map(dep => 
-  `| \`${dep.group_id}:${dep.artifact_id}\` | ${dep.current_version} → ${dep.new_version || 'latest'} |`
-).join('\n') 
-: 'No major dependency updates.'}
-
-### Breaking Changes
-
-> ⚠️ Review the following if upgrading from the original codebase:
-
-1. Minimum Java version is now **${migrationJob.target_java_version}**
-2. Some deprecated APIs have been replaced with modern equivalents
-3. Check \`MIGRATION_REPORT.md\` for detailed change log
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (\`git checkout -b feature/amazing-feature\`)
-3. Commit your changes (\`git commit -m 'Add amazing feature'\`)
-4. Push to the branch (\`git push origin feature/amazing-feature\`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 📞 Support
-
-For questions or issues:
-
-- 📧 Create an issue in this repository
-- 📖 Check the [Migration Report](MIGRATION_REPORT.md) for detailed migration info
-
----
-
-<p align="center">
-  <i>Modernized with ❤️ by Java Migration Accelerator</i><br>
-  <i>Migration completed on ${new Date().toLocaleDateString()}</i>
-</p>
-`;
-
-              // Create and download the project README file
-              const blob = new Blob([projectReadme], { type: 'text/markdown' });
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = 'README.md';
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-              URL.revokeObjectURL(url);
-            }
-          }}
-        >
-          📘 Download Project README
-        </button>
-        <button style={styles.primaryBtn} onClick={resetWizard}>Start New Migration</button>
-      </div>
+  
     </div>
   );
 
@@ -5621,6 +4924,29 @@ For questions or issues:
         {step === 5 && renderMigrationAnimation()}
         {step === 6 && renderMigrationProgress()}
         {step === 7 && renderStep11()}
+        {showPreMigrationFull && repoAnalysis && (
+          <div style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999}}>
+            <div style={{ width: '90%', height: '90%', overflow: 'auto', background: '#fff', padding: 20, borderRadius: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
+                <button style={styles.secondaryBtn} onClick={() => setShowPreMigrationFull(false)}>Close</button>
+                {/* <button style={{ ...styles.primaryBtn, minWidth: 160 }} onClick={() => confirmStartMigration()} disabled={loading}>
+                  {loading ? "Starting..." : "Confirm & Start Migration"}
+                </button> */}
+              </div>
+              <PreMigrationSummary
+                repoAnalysis={repoAnalysis}
+                selectedSourceVersion={selectedSourceVersion}
+                selectedTargetVersion={selectedTargetVersion}
+                runTests={runTests}
+                runSonar={runSonar}
+                runFossa={runFossa}
+                fixBusinessLogic={fixBusinessLogic}
+                fossaResult={fossaResult}
+                fossaLoading={fossaLoading}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

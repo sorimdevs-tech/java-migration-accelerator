@@ -1,20 +1,3 @@
-def get_github_client(token: str, repo_url: str = None):
-    """Return a Github client for public or enterprise GitHub."""
-    from github import Github
-    import re
-    if repo_url and "github.com" in repo_url and not "github." in repo_url.replace("github.com", ""):
-        # Public GitHub
-        return Github(token)
-    elif repo_url:
-        # Enterprise (extract base domain)
-        m = re.match(r"https?://([^/]+)/", repo_url)
-        if m:
-            base_url = f"https://{m.group(1)}/api/v3"
-            return Github(base_url=base_url, login_or_token=token)
-        else:
-            raise Exception("Invalid GitHub Enterprise URL")
-    else:
-        return Github(token)
 """
 Git Service - Handles GitHub and GitLab API interactions
 """
@@ -27,9 +10,51 @@ from github import Github, GithubException, RateLimitExceededException
 import git
 import httpx
 
+# Import dependency updater
+from .dependency_updater import get_dependency_update, get_java_version_update, summarize_dependency_issues
+
 # Simple in-memory cache for rate limit handling
 _cache = {}
 _cache_ttl = 300  # 5 minutes cache TTL
+
+
+def get_github_client(token: str, repo_url: Optional[str] = None):
+    """Return a Github client for public or enterprise GitHub."""
+    from github import Github
+    import re
+    
+    # Token can be empty for public repos (unauthenticated access with rate limits)
+    # But required for private repos
+    token = token.strip() if token else ""
+    
+    # Determine if enterprise or public GitHub
+    if repo_url:
+        # Check if it's public GitHub (github.com)
+        if "github.com" in repo_url and not any(x in repo_url for x in ["github.enterprise", "github.business"]):
+            # Public GitHub with optional token
+            return Github(token) if token else Github()
+        else:
+            # Enterprise GitHub (extract base domain)
+            m = re.match(r"https?://([^/]+)/", repo_url)
+            if m:
+                domain = m.group(1)
+                if "github.com" in domain:
+                    # Still public GitHub
+                    return Github(token) if token else Github()
+                else:
+                    # Enterprise GitHub
+                    base_url = f"https://{domain}/api/v3"
+                    print(f"[GitHub Client] Using enterprise GitHub at {base_url}")
+                    if token:
+                        return Github(base_url=base_url, login_or_token=token)
+                    else:
+                        return Github(base_url=base_url)
+            else:
+                # Fallback to public GitHub
+                return Github(token) if token else Github()
+    else:
+        # No repo URL provided, assume public GitHub
+        return Github(token) if token else Github()
 
 
 def get_cached(key: str) -> Optional[Any]:
@@ -98,21 +123,45 @@ class GitHubService:
             print(f"[CACHE BYPASS] Forcing fresh analysis for {owner}/{repo}")
         
         try:
-            # Allow public repo analysis without token
+            # Create GitHub client with provided token or default
+            # Token is optional for public repos but required for private repos
             if token and len(token.strip()) > 0:
                 g = get_github_client(token.strip(), repo_url)
+                print(f"[GitHub Auth] Using provided token for {owner}/{repo}")
             else:
-                g = get_github_client(None, repo_url)
+                # Try without authentication for public repos (limited rate limit)
+                print(f"[GitHub Auth] No token provided for {owner}/{repo}, using unauthenticated access (limited rate limit)")
+                try:
+                    # For unauthenticated requests, create a client without token
+                    g = Github()
+                except:
+                    # Fallback: still try to proceed
+                    g = Github()
             
             # Check rate limit before making requests
-            rate_limit = g.get_rate_limit()
-            if rate_limit.core.remaining < 10:
-                reset_time = rate_limit.core.reset.timestamp() - time.time()
-                print(f"[RATE LIMIT] Only {rate_limit.core.remaining} requests remaining. Reset in {reset_time:.0f}s")
-                if rate_limit.core.remaining < 5:
-                    raise Exception(f"GitHub API rate limit nearly exhausted. Resets in {reset_time/60:.1f} minutes. Please wait or use a different token.")
+            try:
+                rate_limit = g.get_rate_limit()
+                if rate_limit.core.remaining < 10:
+                    reset_time = rate_limit.core.reset.timestamp() - time.time()
+                    print(f"[RATE LIMIT] Only {rate_limit.core.remaining} requests remaining. Reset in {reset_time:.0f}s")
+                    if rate_limit.core.remaining < 5:
+                        raise Exception(f"GitHub API rate limit nearly exhausted. Resets in {reset_time/60:.1f} minutes. Please wait or use a different token.")
+            except Exception as rate_err:
+                if "Could not create rate limit" not in str(rate_err):
+                    print(f"[RATE LIMIT CHECK] Warning: {rate_err}")
             
-            repository = g.get_repo(f"{owner}/{repo}")
+            # Try to get repository - this will fail with 404 if repo doesn't exist or token lacks access
+            try:
+                repository = g.get_repo(f"{owner}/{repo}")
+            except Exception as repo_err:
+                error_msg = str(repo_err)
+                if "404" in error_msg or "Not Found" in error_msg:
+                    suggestion = ""
+                    if not token or len(token.strip()) == 0:
+                        suggestion = "\n\nTIP: If this is a private repository, please provide a Personal Access Token with 'repo' scope."
+                    raise Exception(f"Repository '{owner}/{repo}' not found or not accessible.{suggestion}\n\nOriginal error: {error_msg}")
+                else:
+                    raise
             
             analysis = {
                 "name": repository.name,
@@ -273,6 +322,15 @@ class GitHubService:
                 print(f"[ANALYSIS] Found {len(analysis['duplications'])} code duplications")
                 print(f"[ANALYSIS] Found {len(analysis['security_issues'])} security issues")
                 print(f"[ANALYSIS] Found {len(analysis['performance_issues'])} performance issues")
+                
+                # Add dependency summary for quick reference
+                if analysis.get("dependencies"):
+                    dependency_summary = summarize_dependency_issues(analysis["dependencies"])
+                    analysis["dependency_summary"] = dependency_summary
+                    print(f"[DEPENDENCIES] Total: {dependency_summary['total_dependencies']}")
+                    print(f"[DEPENDENCIES] Critical: {len(dependency_summary['critical_issues'])}")
+                    print(f"[DEPENDENCIES] High: {len(dependency_summary['high_issues'])}")
+                    print(f"[DEPENDENCIES] Estimated migration hours: {dependency_summary['estimated_migration_hours']}")
                 
             except GithubException:
                 pass
@@ -687,7 +745,7 @@ class GitHubService:
         return {"version": "not_specified", "detected": False}
     
     def _parse_pom_dependencies(self, pom_content: str) -> List[Dict[str, str]]:
-        """Parse dependencies from pom.xml"""
+        """Parse dependencies from pom.xml with update recommendations"""
         import re
 
         dependencies = []
@@ -700,13 +758,29 @@ class GitHubService:
         )
 
         for match in dep_pattern.finditer(pom_content):
-            dependencies.append({
-                "group_id": match.group(1),
-                "artifact_id": match.group(2),
-                "current_version": match.group(3) or "inherited",
-                "new_version": None,
-                "status": "analyzing"
-            })
+            group_id = match.group(1)
+            artifact_id = match.group(2)
+            current_version = match.group(3) or "inherited"
+            full_artifact = f"{group_id}:{artifact_id}"
+            
+            # Get update recommendation
+            update_info = get_dependency_update(full_artifact, current_version)
+            
+            dep_entry = {
+                "group_id": group_id,
+                "artifact_id": artifact_id,
+                "current_version": current_version,
+                "new_version": update_info.get("target_version"),
+                "status": update_info.get("status", "OK"),
+                "needs_update": update_info.get("needs_update", False),
+                "severity": update_info.get("update_severity", "OK"),
+                "reason": update_info.get("reason", ""),
+                "code_changes_needed": update_info.get("code_changes_needed", False),
+                "estimated_impact": update_info.get("estimated_impact", "LOW"),
+                "migration_guide": update_info.get("migration_guide", "")
+            }
+            
+            dependencies.append(dep_entry)
 
         return dependencies
 

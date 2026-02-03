@@ -2,7 +2,7 @@
  * API Service for Java Migration Backend
  */
 
-export const API_BASE_URL = (import.meta.env?.VITE_API_URL || 'http://localhost:8001') + '/api';
+export const API_BASE_URL = ((import.meta as any).env?.VITE_API_URL || 'http://localhost:8001') + '/api';
 
 export interface RepoInfo {
   name: string;
@@ -19,6 +19,53 @@ export interface RepoFile {
   type: 'file' | 'dir';
   size: number;
   url: string;
+}
+
+export interface DependencyInfo {
+  group_id: string;
+  artifact_id: string;
+  current_version: string;
+  new_version: string | null;
+  status: string;
+  needs_update?: boolean;
+  severity?: string;
+  reason?: string;
+  code_changes_needed?: boolean;
+  estimated_impact?: string;
+  migration_guide?: string;
+}
+
+export interface DependencySummary {
+  total_dependencies: number;
+  critical_issues: any[];
+  high_issues: any[];
+  medium_issues: any[];
+  low_issues: any[];
+  ok_dependencies: any[];
+  estimated_migration_hours: number;
+  total_severity_score: number;
+  has_critical: boolean;
+  has_high: boolean;
+}
+
+export interface RepoAnalysis {
+  name: string;
+  full_name: string;
+  default_branch: string;
+  language: string | null;
+  build_tool: string | null;
+  java_version: string | null;
+  java_files?: string[];
+  has_tests: boolean;
+  dependencies: DependencyInfo[];
+  dependency_summary?: DependencySummary;
+  api_endpoints: { path: string; method: string; file: string }[];
+  structure: {
+    has_pom_xml: boolean;
+    has_build_gradle: boolean;
+    has_src_main: boolean;
+    has_src_test: boolean;
+  };
 }
 
 export interface RepoUrlAnalysis {
@@ -42,14 +89,6 @@ export interface FileContentResponse {
   repo: string;
   file_path: string;
   content: string;
-}
-
-export interface DependencyInfo {
-  group_id: string;
-  artifact_id: string;
-  current_version: string;
-  new_version: string | null;
-  status: string;
 }
 
 export interface ConversionType {
@@ -115,7 +154,6 @@ export interface MigrationResult {
   sonar_accepted_issues?: number;
   sonar_security_hotspots?: number;
   sonar_duplications?: number;
-  // Full SonarQube/SonarCloud aggregated result (newer API shape)
   sonarqube_results?: {
     quality_gate?: string | null;
     bugs?: number;
@@ -133,7 +171,6 @@ export interface MigrationResult {
     maintainability_rating_letter?: string;
     analysis_url?: string | null;
   };
-  // FOSSA scan results (optional)
   fossa_policy_status?: string | null;
   fossa_total_dependencies?: number;
   fossa_license_issues?: number;
@@ -148,32 +185,11 @@ export interface MigrationResult {
   warnings_fixed: number;
 }
 
-export interface RepoAnalysis {
-  name: string;
-  full_name: string;
-  default_branch: string;
-  language: string | null;
-  build_tool: string | null;
-  java_version: string | null;
-  // List of discovered Java source file paths
-  java_files?: string[];
-  has_tests: boolean;
-  dependencies: DependencyInfo[];
-  api_endpoints: { path: string; method: string; file: string }[];
-  structure: {
-    has_pom_xml: boolean;
-    has_build_gradle: boolean;
-    has_src_main: boolean;
-    has_src_test: boolean;
-  };
-}
-
 export interface JavaVersionInfo {
   source_versions: { value: string; label: string }[];
   target_versions: { value: string; label: string }[];
 }
 
-// Fetch GitHub repositories
 export async function fetchRepositories(token: string): Promise<RepoInfo[]> {
   const response = await fetch(`${API_BASE_URL}/github/repos?token=${encodeURIComponent(token)}`);
   if (!response.ok) {
@@ -183,7 +199,6 @@ export async function fetchRepositories(token: string): Promise<RepoInfo[]> {
   return response.json();
 }
 
-// Analyze a repository
 export async function analyzeRepository(token: string, owner: string, repo: string): Promise<RepoAnalysis> {
   const response = await fetch(
     `${API_BASE_URL}/github/repo/${owner}/${repo}/analyze?token=${encodeURIComponent(token)}`
@@ -195,7 +210,6 @@ export async function analyzeRepository(token: string, owner: string, repo: stri
   return response.json();
 }
 
-// NEW: Analyze repository directly by URL (works for public repos without token)
 export async function analyzeRepoUrl(repoUrl: string, token: string = ""): Promise<RepoUrlAnalysis> {
   const response = await fetch(
     `${API_BASE_URL}/github/analyze-url?repo_url=${encodeURIComponent(repoUrl)}&token=${encodeURIComponent(token)}`
@@ -207,7 +221,6 @@ export async function analyzeRepoUrl(repoUrl: string, token: string = ""): Promi
   return response.json();
 }
 
-// NEW: List files in a repository (works for public repos without token)
 export async function listRepoFiles(repoUrl: string, token: string = "", path: string = ""): Promise<RepoFilesResponse> {
   const response = await fetch(
     `${API_BASE_URL}/github/list-files?repo_url=${encodeURIComponent(repoUrl)}&token=${encodeURIComponent(token)}&path=${encodeURIComponent(path)}`
@@ -219,7 +232,31 @@ export async function listRepoFiles(repoUrl: string, token: string = "", path: s
   return response.json();
 }
 
-// NEW: Get file content (works for public repos without token)
+export interface RepoInfoResponse {
+  repo_url: string;
+  owner: string;
+  repo: string;
+  name: string;
+  full_name: string;
+  url: string;
+  default_branch: string;
+  language: string | null;
+  description: string | null;
+  is_private: boolean;
+  is_enterprise: boolean;
+}
+
+export async function getRepoInfo(repoUrl: string, token: string = ""): Promise<RepoInfoResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/github/repo-info?repo_url=${encodeURIComponent(repoUrl)}&token=${encodeURIComponent(token)}`
+  );
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get repository information');
+  }
+  return response.json();
+}
+
 export async function getFileContent(repoUrl: string, filePath: string, token: string = ""): Promise<FileContentResponse> {
   const response = await fetch(
     `${API_BASE_URL}/github/file-content?repo_url=${encodeURIComponent(repoUrl)}&file_path=${encodeURIComponent(filePath)}&token=${encodeURIComponent(token)}`
@@ -231,7 +268,6 @@ export async function getFileContent(repoUrl: string, filePath: string, token: s
   return response.json();
 }
 
-// Get available Java versions
 export async function getJavaVersions(): Promise<JavaVersionInfo> {
   const response = await fetch(`${API_BASE_URL}/java-versions`);
   if (!response.ok) {
@@ -240,7 +276,6 @@ export async function getJavaVersions(): Promise<JavaVersionInfo> {
   return response.json();
 }
 
-// Get available conversion types
 export async function getConversionTypes(): Promise<ConversionType[]> {
   const response = await fetch(`${API_BASE_URL}/conversion-types`);
   if (!response.ok) {
@@ -249,7 +284,6 @@ export async function getConversionTypes(): Promise<ConversionType[]> {
   return response.json();
 }
 
-// Start migration
 export async function startMigration(request: MigrationRequest): Promise<MigrationResult> {
   const response = await fetch(`${API_BASE_URL}/migration/start`, {
     method: 'POST',
@@ -265,7 +299,6 @@ export async function startMigration(request: MigrationRequest): Promise<Migrati
   return response.json();
 }
 
-// Get migration status
 export async function getMigrationStatus(jobId: string): Promise<MigrationResult> {
   const response = await fetch(`${API_BASE_URL}/migration/${jobId}`);
   if (!response.ok) {
@@ -275,7 +308,6 @@ export async function getMigrationStatus(jobId: string): Promise<MigrationResult
   return response.json();
 }
 
-// Get migration logs
 export async function getMigrationLogs(jobId: string): Promise<{ job_id: string; logs: string[] }> {
   const response = await fetch(`${API_BASE_URL}/migration/${jobId}/logs`);
   if (!response.ok) {
@@ -284,7 +316,6 @@ export async function getMigrationLogs(jobId: string): Promise<{ job_id: string;
   return response.json();
 }
 
-// Get FOSSA scan results for a migration (if available)
 export async function getMigrationFossa(jobId: string): Promise<{
   job_id: string;
   policy_status?: string | null;
@@ -302,22 +333,16 @@ export async function getMigrationFossa(jobId: string): Promise<{
   const data = await response.json();
   const payload = (data && data.fossa) ? data.fossa : data;
 
-  // Backend `fossa_service.py` returns keys like `compliance_status`,
-  // `total_dependencies`, `licenses` (map), `vulnerabilities` (map),
-  // and `dependencies` (array). Normalize to the frontend-friendly shape.
   const policy_status = payload.compliance_status ?? payload.policy_status ?? null;
   const total_dependencies = payload.total_dependencies ?? payload.totalDeps ?? 0;
 
-  // Count license issues: prefer explicit numeric field, else count UNKNOWN licenses
   let license_issues = 0;
   if (typeof payload.license_issues === 'number') {
     license_issues = payload.license_issues;
   } else if (payload.licenses && typeof payload.licenses === 'object') {
-    // Heuristic: count UNKNOWN licenses or sum non-empty license counts
     license_issues = payload.licenses.UNKNOWN || Object.values(payload.licenses).reduce((s: number, v: any) => s + (Number(v) || 0), 0);
   }
 
-  // Sum vulnerabilities counts if provided as an object
   let vulnerabilities = 0;
   if (typeof payload.vulnerabilities === 'number') {
     vulnerabilities = payload.vulnerabilities;
@@ -325,7 +350,6 @@ export async function getMigrationFossa(jobId: string): Promise<{
     vulnerabilities = Object.values(payload.vulnerabilities).reduce((s: number, v: any) => s + (Number(v) || 0), 0);
   }
 
-  // Count outdated dependencies if the dependencies list contains status field
   let outdated_dependencies = 0;
   if (Array.isArray(payload.dependencies)) {
     outdated_dependencies = payload.dependencies.filter((d: any) => d.status === 'outdated' || d.status === 'out-of-date' || d.outdated === true).length;
@@ -343,7 +367,6 @@ export async function getMigrationFossa(jobId: string): Promise<{
   };
 }
 
-// Download migrated project as ZIP
 export async function downloadMigratedProject(jobId: string): Promise<Blob> {
   const response = await fetch(`${API_BASE_URL}/migration/${jobId}/download-zip`);
   if (!response.ok) {
@@ -353,7 +376,6 @@ export async function downloadMigratedProject(jobId: string): Promise<Blob> {
   return response.blob();
 }
 
-// Download migration report
 export async function downloadMigrationReport(jobId: string): Promise<Blob> {
   const response = await fetch(`${API_BASE_URL}/migration/${jobId}/report`);
   if (!response.ok) {
@@ -362,7 +384,6 @@ export async function downloadMigrationReport(jobId: string): Promise<Blob> {
   return response.blob();
 }
 
-// List all migrations
 export async function listMigrations(): Promise<MigrationResult[]> {
   const response = await fetch(`${API_BASE_URL}/migrations`);
   if (!response.ok) {
@@ -371,7 +392,6 @@ export async function listMigrations(): Promise<MigrationResult[]> {
   return response.json();
 }
 
-// Get available recipes
 export async function getRecipes(): Promise<{ id: string; name: string; description: string }[]> {
   const response = await fetch(`${API_BASE_URL}/openrewrite/recipes`);
   if (!response.ok) {
@@ -380,13 +400,11 @@ export async function getRecipes(): Promise<{ id: string; name: string; descript
   return response.json();
 }
 
-// Health check
 export async function healthCheck(): Promise<{ status: string; timestamp: string }> {
   const response = await fetch('http://localhost:8001/health');
   return response.json();
 }
 
-// Clone a repository and run a FOSSA analysis (backend will return simulated results when CLI unavailable)
 export async function analyzeFossaForRepo(repoUrl: string, token: string = ""): Promise<{
   repo_url: string;
   fossa: {
@@ -405,7 +423,6 @@ export async function analyzeFossaForRepo(repoUrl: string, token: string = ""): 
   return response.json();
 }
 
-// Aggregate Sonar metrics for multiple repositories or project keys
 export async function aggregateSonar(repoUrls: string[], token: string = ""):
   Promise<{
     projects: any[];
