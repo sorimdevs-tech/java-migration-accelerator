@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import "./MigrationWizard.css";
 import PreMigrationSummary from "./PreMigrationSummary";
-import DependencyAnalysis from "./DependencyAnalysis";
+// import DependencyAnalysis from "./DependencyAnalysis";
 import {
   fetchRepositories,
   analyzeRepository,
@@ -1767,8 +1767,8 @@ public class UserService {
                         </div>
                       )}
 
-                      {/* Dependency Analysis Component */}
-                      {repoAnalysis && repoAnalysis.dependencies && repoAnalysis.dependencies.length > 0 && (
+                      {/* Dependency Analysis Component - DISABLED TEMPORARILY */}
+                      {/* {repoAnalysis && repoAnalysis.dependencies && repoAnalysis.dependencies.length > 0 && (
                         <div style={{ marginBottom: 24 }}>
                           <DependencyAnalysis 
                             dependencies={repoAnalysis.dependencies}
@@ -1776,7 +1776,7 @@ public class UserService {
                             javaVersion={repoAnalysis.java_version || undefined}
                           />
                         </div>
-                      )}
+                      )} */}
                       
                   {/* GitHub-like File Explorer */}
                   <div style={styles.sectionTitle}>📂 Repository Files</div>
