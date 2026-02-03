@@ -50,23 +50,16 @@ const MIGRATION_STEPS = [
     id: 3,
     name: "Strategy",
     icon: "📋",
-    description: "Assessment & Migration Report",
-    summary: "Review assessment results and define the migration roadmap"
+    description: "Assessment & Modernization Report",
+    summary: "Review assessment results and define the modernization roadmap"
   },
   {
     id: 4,
-    name: "Migration",
+    name: "Modernization",
     icon: "⚡",
     description: "Review Modernization",
     summary: "Execute the upgrade using automation tools and refactor legacy components"
-  },
-  // {
-  //   id: 5,
-  //   name: "Summary",
-  //   icon: "📊",
-  //   description: "Migration Summary",
-  //   summary: "View migration report and download migrated project"
-  // },
+  }
 ];
 
 export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () => void }) {
@@ -2496,7 +2489,7 @@ public class UserService {
       <div style={styles.stepHeader}>
         <span style={styles.stepIcon}>📋</span>
         <div>
-          <h2 style={styles.title}>Assessment & Migration </h2>
+          <h2 style={styles.title}>Assessment & Modernization </h2>
           <p style={styles.subtitle}>{MIGRATION_STEPS[2].summary}</p>
         </div>
       </div>
@@ -2676,14 +2669,14 @@ public class UserService {
       )}
 
       {/* Strategy Section */}
-      <div style={styles.sectionTitle}>📋 Migration Strategy</div>
+      <div style={styles.sectionTitle}>📋 Modernization Strategy</div>
       <div style={styles.field}>
-        <label style={styles.label}>Migration Approach</label>
+        <label style={styles.label}>Modernization Approach</label>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
           {[
             {
               value: "in-place",
-              label: "In-place Migration",
+              label: "In-place Modernization",
               desc: "Modify existing codebase directly",
               tooltip: "Directly modifies your existing repository. Fastest option but creates a new commit history. Ideal for projects where you want to maintain the same repository URL and can handle potential rollback challenges.",
               icon: "⚡",
@@ -2691,7 +2684,7 @@ public class UserService {
             },
             {
               value: "branch",
-              label: "Branch-based Migration",
+              label: "Branch-based Modernization",
               desc: "Safe parallel track with new branch",
               tooltip: "Creates a new branch in your existing repository. Safe option that preserves your main branch. Allows for gradual rollout and easy rollback. Best for teams that want to test migrations before merging.",
               icon: "🌿",
@@ -2699,7 +2692,7 @@ public class UserService {
             },
             {
               value: "fork",
-              label: "Fork & Migrate",
+              label: "Fork & Modernization",
               desc: "Create new repository with migrated code",
               tooltip: "Creates an entirely new repository with the migrated code. Most conservative approach. Perfect for major version upgrades or when you want to maintain separate repositories for different Java versions.",
               icon: "🍴",
@@ -2998,7 +2991,7 @@ public class UserService {
       </div>
 
       <div style={styles.field}>
-        <label style={styles.label}>Migration Options</label>
+        <label style={styles.label}>Modernization Options</label>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px", alignItems: "stretch" }}>
           {[
             { key: "runTests", checked: runTests, onChange: (c: boolean) => setRunTests(c), title: "Run Test Suite", desc: "Execute automated tests after migration", icon: "🧪", color: "#22c55e", recommended: true },
@@ -3033,7 +3026,7 @@ public class UserService {
       <div style={styles.btnRow}>
         <button style={styles.secondaryBtn} onClick={() => setStep(3)}>← Back</button>
         <button style={{ ...styles.primaryBtn, opacity: loading ? 0.5 : 1 }} onClick={handleStartMigration} disabled={loading}>
-          {loading ? "Starting..." : "🚀Migration Summary "}
+          {loading ? "Starting..." : "🚀Modernization Summary "}
         </button>
       </div>
     </div>
@@ -3156,17 +3149,17 @@ public class UserService {
       <div style={styles.stepHeader}>
         <span style={styles.stepIcon}>📋</span>
         <div>
-          <h2 style={styles.title}>Migration Strategy</h2>
-          <p style={styles.subtitle}>Define your migration approach and target configuration.</p>
+          <h2 style={styles.title}>Modernization Strategy</h2>
+          <p style={styles.subtitle}>Define your modernization approach and target configuration.</p>
         </div>
       </div>
       <div style={styles.field}>
-        <label style={styles.label}>Migration Approach</label>
+        <label style={styles.label}>Modernization Approach</label>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
           {[
             {
               value: "in-place",
-              label: "In-place Migration",
+              label: "In-place Modernization",
               desc: "Modify existing codebase directly",
               tooltip: "Directly modifies your existing repository. Fastest option but creates a new commit history. Ideal for projects where you want to maintain the same repository URL and can handle potential rollback challenges.",
               icon: "⚡",
@@ -3174,17 +3167,17 @@ public class UserService {
             },
             {
               value: "branch",
-              label: "Branch-based Migration",
+              label: "Branch-based Modernization",
               desc: "Safe parallel track with new branch",
-              tooltip: "Creates a new branch in your existing repository. Safe option that preserves your main branch. Allows for gradual rollout and easy rollback. Best for teams that want to test migrations before merging.",
+              tooltip: "Creates a new branch in your existing repository. Safe option that preserves your main branch. Allows for gradual rollout and easy rollback. Best for teams that want to test modernizations before merging.",
               icon: "🌿",
               color: "#22c55e"
             },
             {
               value: "fork",
-              label: "Fork & Migrate",
-              desc: "Create new repository with migrated code",
-              tooltip: "Creates an entirely new repository with the migrated code. Most conservative approach. Perfect for major version upgrades or when you want to maintain separate repositories for different Java versions.",
+              label: "Fork & Modernize",
+              desc: "Create new repository with modernized code",
+              tooltip: "Creates an entirely new repository with the modernized code. Most conservative approach. Perfect for major version upgrades or when you want to maintain separate repositories for different Java versions.",
               icon: "🍴",
               color: "#f59e0b"
             },
@@ -3311,7 +3304,7 @@ public class UserService {
         <div style={styles.stepHeader}>
           <span style={styles.stepIcon}>🎯</span>
           <div>
-            <h2 style={styles.title}>Migration Planning</h2>
+            <h2 style={styles.title}>Modernization Planning</h2>
             <p style={styles.subtitle}>Configure Java versions and target settings.</p>
           </div>
         </div>
@@ -3412,7 +3405,7 @@ public class UserService {
         <span style={styles.stepIcon}>🔧</span>
         <div>
           <h2 style={styles.title}>Build Modernization & Refactor</h2>
-          <p style={styles.subtitle}>Configure conversions and prepare for migration.</p>
+          <p style={styles.subtitle}>Configure conversions and prepare for modernization.</p>
         </div>
       </div>
       <div style={styles.field}>
@@ -3496,13 +3489,13 @@ public class UserService {
       </div>
 
       <div style={styles.field}>
-        <label style={styles.label}>Migration Options</label>
+        <label style={styles.label}>Modernization Options</label>
         <div style={styles.optionsGrid}>
           <label style={styles.optionItem}>
             <input type="checkbox" checked={runTests} onChange={(e) => setRunTests(e.target.checked)} style={styles.checkbox} />
               <div>
               <div style={{ fontWeight: 500, fontSize: 16 }}>Run Tests</div>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>Execute test suite after migration</div>
+              <div style={{ fontSize: 12, color: "#6b7280" }}>Execute test suite after modernization</div>
             </div>
           </label>
           <label style={styles.optionItem}>
@@ -3558,7 +3551,7 @@ public class UserService {
         marginBottom: 24
       }}>
         <div style={{ fontSize: 16, fontWeight: 600, color: "#7f1d1d", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-          <span>✓</span> Review Migration Configuration
+          <span>✓</span> Review Modernization Configuration
         </div>
         <label style={{
           display: "flex",
@@ -3581,7 +3574,7 @@ public class UserService {
             }}
           />
           <span style={{ fontSize: 14, color: "#1f2937", lineHeight: 1.5 }}>
-            I have reviewed all migration configuration options and understand what will be modernized. I'm ready to proceed to the review page.
+            I have reviewed all modernization configuration options and understand what will be modernized. I'm ready to proceed to the review page.
           </span>
         </label>
       </div>
@@ -3597,7 +3590,7 @@ public class UserService {
           onClick={() => { setReviewAcknowledged(false); setStep(4.5); }}
           disabled={!migrationConfigAcknowledged}
         >
-          Continue to Migration →
+          Continue to Modernization →
         </button>
       </div>
     </div>
@@ -3608,8 +3601,8 @@ public class UserService {
       <div style={styles.stepHeader}>
         <span style={styles.stepIcon}>📋</span>
         <div>
-          <h2 style={styles.title}>Review & Confirm Migration</h2>
-          <p style={styles.subtitle}>Please review all migration details and confirm before proceeding</p>
+          <h2 style={styles.title}>Review & Confirm Modernization</h2>
+          <p style={styles.subtitle}>Please review all modernization details and confirm before proceeding</p>
         </div>
       </div>
 
@@ -3677,7 +3670,7 @@ public class UserService {
           gap: 12
         }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#6b21a8", display: "flex", alignItems: "center", gap: 8 }}>
-            <span>🔧</span> Migration Approach
+            <span>🔧</span> Modernization Approach
           </div>
           <div>
             <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Strategy</div>
@@ -3810,7 +3803,7 @@ public class UserService {
           <span>⚠️</span> Important: Please Review Before Proceeding
         </div>
         <div style={{ fontSize: 14, color: "#1f2937", lineHeight: 1.6, marginBottom: 16 }}>
-          I understand that this migration will:
+          I understand that this modernization will:
           <ul style={{ marginLeft: 24, marginTop: 8, marginBottom: 8, paddingLeft: 0, color: "#374151" }}>
             <li>Make significant changes to my source code</li>
             <li>Update Java version from {selectedSourceVersion} to {selectedTargetVersion}</li>
@@ -3838,7 +3831,7 @@ public class UserService {
             }}
           />
           <span style={{ fontSize: 14, fontWeight: 500, color: "#1f2937" }}>
-            I have reviewed all migration details and confirm that I want to proceed
+            I have reviewed all modernization details and confirm that I want to proceed
           </span>
         </label>
       </div>
@@ -3855,7 +3848,7 @@ public class UserService {
           onClick={handleStartMigration}
           disabled={!reviewAcknowledged || loading}
         >
-          {loading ? "Starting..." : "🚀 Start Migration"}
+          {loading ? "Starting..." : "🚀 Start Modernization"}
         </button>
       </div>
     </div>
@@ -3867,16 +3860,16 @@ public class UserService {
       <div style={styles.stepHeader}>
         <span style={styles.stepIcon}>🚀</span>
         <div>
-          <h2 style={styles.title}>Migration in Progress</h2>
-          <p style={styles.subtitle}>Your project is being migrated... Please wait.</p>
+          <h2 style={styles.title}>Modernization in Progress</h2>
+          <p style={styles.subtitle}>Your project is being modernized... Please wait.</p>
         </div>
       </div>
 
-      {/* Animated Migration Progress */}
+      {/* Animated Modernization Progress */}
       <div style={styles.animationContainer}>
         <div style={styles.migrationAnimation}>
           <div style={styles.animationHeader}>
-            <div style={styles.migratingText}>Migrating Java Project</div>
+            <div style={styles.migratingText}>Modernizing Java Project</div>
             <div style={styles.versionTransition}>
               Java {selectedSourceVersion} → Java {selectedTargetVersion}
             </div>
@@ -3910,7 +3903,7 @@ public class UserService {
 
             <div style={{ ...styles.animationStep, opacity: animationProgress >= 90 ? 1 : 0.3, transition: "opacity 0.3s ease" }}>
               <div style={styles.stepIconAnimated}>📊</div>
-              <div style={styles.stepText}>Generating Migration Report</div>
+              <div style={styles.stepText}>Generating Modernization Report</div>
               {animationProgress >= 90 && <div style={styles.checkMarkAnimated}>✓</div>}
             </div>
           </div>
@@ -3918,7 +3911,7 @@ public class UserService {
           {/* Progress Bar with Animation */}
           <div style={styles.animatedProgressSection}>
             <div style={styles.animatedProgressHeader}>
-              <span>Migration Progress</span>
+              <span>Modernization Progress</span>
               <span>{animationProgress}%</span>
             </div>
             <div style={styles.animatedProgressBar}>
@@ -3997,7 +3990,7 @@ public class UserService {
         </div>
         {migrationJob.status === "completed" && migrationJob.target_repo && (
           <div style={styles.successBox}>
-            <div style={styles.successTitle}>🎉 Migration Successful!</div>
+            <div style={styles.successTitle}>🎉 Modernization Successful!</div>
             <a href={`https://github.com/${migrationJob.target_repo}`} target="_blank" rel="noreferrer" style={styles.repoLink}>View Migrated Repository →</a>
           </div>
         )}
@@ -4010,7 +4003,7 @@ public class UserService {
                 resetWizard();
               }}
             >
-              ⏹️ Cancel Migration
+              ⏹️ Cancel Modernization
             </button>
           )}
           {migrationJob.status === "failed" && (
@@ -4037,8 +4030,8 @@ public class UserService {
       <div style={styles.stepHeader}>
         <span style={styles.stepIcon}>📄</span>
         <div>
-          <h2 style={styles.title}>Migration Report</h2>
-          <p style={styles.subtitle}>Complete migration summary with all results and metrics.</p>
+          <h2 style={styles.title}>Modernization Report</h2>
+          <p style={styles.subtitle}>Complete modernization summary with all results and metrics.</p>
         </div>
       </div>
       {migrationJob && (
@@ -4076,7 +4069,7 @@ public class UserService {
                 <span style={styles.reportValue}>{migrationJob.source_java_version} → {migrationJob.target_java_version}</span>
               </div>
               <div style={styles.reportItem}>
-                <span style={styles.reportLabel}>Migration Completed</span>
+                <span style={styles.reportLabel}>Modernization Completed</span>
                 <span style={styles.reportValue}>{migrationJob.completed_at ? new Date(migrationJob.completed_at).toLocaleString() : "In Progress"}</span>
               </div>
             </div>
@@ -4134,7 +4127,7 @@ public class UserService {
 
           {/* Migration Timeline & Duration */}
           <div style={styles.reportSection}>
-            <h3 style={styles.reportTitle}>⏱️ Migration Timeline & Duration</h3>
+            <h3 style={styles.reportTitle}>⏱️ Modernization Timeline & Duration</h3>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
               <div style={styles.timelineItem}>
                 <span style={{ fontSize: 12, color: "#57606a" }}>🔗 Connection</span>

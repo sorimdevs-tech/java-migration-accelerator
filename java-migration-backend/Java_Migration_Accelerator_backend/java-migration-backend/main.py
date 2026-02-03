@@ -395,11 +395,15 @@ async def analyze_repository(owner: str, repo: str, token: str = ""):
 
 @app.get("/api/github/analyze-url")
 async def analyze_repo_url(repo_url: str, token: str = ""):
-    """Analyze a repository directly by URL (uses default token for rate limits)"""
+    """Analyze a repository directly by URL"""
     try:
-        # Always use default token to avoid rate limits on unauthenticated requests
-        effective_token = token.strip() if token and token.strip() else DEFAULT_GITHUB_TOKEN
+        # For private repos, use the user-provided token
+        # For public repos, token optional (improves rate limits but not required)
         owner, repo = await github_service.parse_repo_url(repo_url)
+        
+        # Use user token if provided, otherwise use default (may be empty but that's OK for public repos)
+        effective_token = token.strip() if token and token.strip() else DEFAULT_GITHUB_TOKEN
+        
         analysis = await github_service.analyze_repository(effective_token, owner, repo, repo_url)
         return {
             "repo_url": repo_url,
@@ -409,7 +413,7 @@ async def analyze_repo_url(repo_url: str, token: str = ""):
         }
     except Exception as e:
         import traceback
-        print(f"[analyze-url ERROR] repo_url={repo_url} token_len={len(token) if token else 0} error={str(e)}\nTRACE:\n{traceback.format_exc()}")
+        print(f"[analyze-url ERROR] repo_url={repo_url} token_provided={bool(token and token.strip())} error={str(e)}\nTRACE:\n{traceback.format_exc()}")
         raise HTTPException(status_code=400, detail=f"{str(e)} (see backend logs for details)")
 
 
@@ -433,6 +437,30 @@ async def list_repo_files(repo_url: str, token: str = "", path: str = ""):
         import traceback
         print(f"[list-files ERROR] repo_url={repo_url} token_len={len(token) if token else 0} path={path} error={str(e)}\nTRACE:\n{traceback.format_exc()}")
         raise HTTPException(status_code=400, detail=f"{str(e)} (see backend logs for details)")
+
+
+@app.get("/api/github/repo-info")
+async def get_repo_info(repo_url: str, token: str = ""):
+    """Get repository information including visibility (public/private/enterprise)"""
+    try:
+        owner, repo = await github_service.parse_repo_url(repo_url)
+        info = await github_service.get_repo_info(token, owner, repo)
+        return {
+            "repo_url": repo_url,
+            "owner": owner,
+            "repo": repo,
+            "name": info["name"],
+            "full_name": info["full_name"],
+            "url": info["url"],
+            "default_branch": info["default_branch"],
+            "language": info["language"],
+            "description": info["description"],
+            "is_private": info["is_private"],
+            "is_enterprise": "github.com" not in repo_url,
+            "owner": info["owner"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.get("/api/github/file-content")
