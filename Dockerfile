@@ -7,8 +7,9 @@ COPY . ./
 RUN npm run build
 
 # Backend stage
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 WORKDIR /app
+
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -35,8 +36,8 @@ RUN mkdir -p /tmp/migrations /app/logs
 EXPOSE 8001
 
 # Set environment variables
-ENV PYTHONPATH=/app:$PYTHONPATH
+ENV PYTHONPATH=/app
 ENV WORK_DIR=/tmp/migrations
-
+e
 # Start the backend server (it will serve static frontend files)
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]

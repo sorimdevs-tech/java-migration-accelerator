@@ -49,11 +49,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files (frontend)
-static_dir = "/app/static"
-if os.path.exists(static_dir):
-    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
-
 # Initialize services
 github_service = GitHubService()
 gitlab_service = GitLabService()
@@ -417,7 +412,6 @@ async def analyze_repo_url(repo_url: str, token: str = ""):
         raise HTTPException(status_code=400, detail=f"{str(e)} (see backend logs for details)")
 
 
-
 @app.get("/api/github/list-files")
 async def list_repo_files(repo_url: str, token: str = "", path: str = ""):
     """List all files in a repository (uses default token for rate limits)"""
@@ -477,6 +471,23 @@ async def get_file_content(repo_url: str, file_path: str, token: str = ""):
             "repo": repo,
             "file_path": file_path,
             "content": content
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/github/rate-limit-status")
+async def get_rate_limit_status():
+    """Get current GitHub API rate limit status"""
+    try:
+        from services.rate_limiter import get_rate_limiter
+        rate_limiter = get_rate_limiter()
+        status = rate_limiter.get_all_statuses()
+        
+        return {
+            "status": status,
+            "authenticated": rate_limiter.authenticated,
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -2095,6 +2106,26 @@ def add_log(job_id: str, message: str):
     if job_id in migration_jobs:
         timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
         migration_jobs[job_id].migration_log.append(f"[{timestamp}] {message}")
+
+
+# Mount static files (frontend) - MUST be LAST to avoid catching API routes
+# Try multiple possible locations for the frontend build
+possible_dirs = [
+    "/app/static",
+    "/app/dist",
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "dist"),
+]
+static_dir = None
+for d in possible_dirs:
+    if os.path.exists(d):
+        static_dir = d
+        print(f"✓ Serving frontend from: {static_dir}")
+        break
+
+if static_dir:
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+else:
+    print("⚠ Frontend build not found. Run 'npm run build' in java-migration-frontend")
 
 
 if __name__ == "__main__":
