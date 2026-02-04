@@ -38,6 +38,6 @@ EXPOSE 8001
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV WORK_DIR=/tmp/migrations
-e
+
 # Start the backend server (it will serve static frontend files)
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
