@@ -28,10 +28,7 @@ services:
     staticPublishPath: ./dist
     envVars:
       - key: VITE_API_URL
-        fromService:
-          name: java-migration-backend
-          type: web
-          envVarKey: RENDER_EXTERNAL_URL
+        value: http://localhost:8001
     headers:
       - path: /*
         name: Cache-Control

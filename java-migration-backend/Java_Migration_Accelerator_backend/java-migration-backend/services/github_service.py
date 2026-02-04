@@ -9,13 +9,22 @@ from typing import List, Dict, Any, Optional
 from github import Github, GithubException, RateLimitExceededException
 import git
 import httpx
+import logging
 
 # Import dependency updater
 from .dependency_updater import get_dependency_update, get_java_version_update, summarize_dependency_issues
 
+# Import rate limiter
+from .rate_limiter import get_rate_limiter, with_rate_limit_handling, format_rate_limit_status
+
+logger = logging.getLogger(__name__)
+
 # Simple in-memory cache for rate limit handling
 _cache = {}
 _cache_ttl = 300  # 5 minutes cache TTL
+
+# Get global rate limiter
+_rate_limiter = get_rate_limiter()
 
 
 def get_github_client(token: str, repo_url: Optional[str] = None):
