@@ -1,5 +1,10 @@
 # ============================================================
-# Java Migration Accelerator - Multi-Stage Docker Build
+# Java Migration Accelerator - Multi-Stage Docker Build (Hardened)
+# ============================================================
+# Security Focus:
+# - Latest base images with patches
+# - Minimal runtime dependencies
+# - No build tools in runtime image
 # ============================================================
 
 # Stage 1: Build Frontend (Node.js)
@@ -40,14 +45,11 @@ LABEL version="1.0.0"
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     wget \
     openjdk-17-jdk \
-    maven \
-    gradle \
-    unzip \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
