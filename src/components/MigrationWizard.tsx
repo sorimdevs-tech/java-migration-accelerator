@@ -29,6 +29,10 @@ import type {
 interface JavaVersionOption {
   value: string;
   label: string;
+  release_type?: string;
+  release_date?: string;
+  eol_date?: string;
+  description?: string;
 }
 
 const MIGRATION_STEPS = [
@@ -121,6 +125,10 @@ export default function MigrationWizard({ onBackToHome }: { onBackToHome?: () =>
   const [userSelectedVersion, setUserSelectedVersion] = useState<string | null>(null);
   // Track if no version was detected/selected
   const [sourceVersionStatus, setSourceVersionStatus] = useState<"detected" | "not_selected" | "unknown">("unknown");
+  
+  // Version filter and display options
+  const [versionFilter, setVersionFilter] = useState<"all" | "lts" | "latest">("all");
+  const [showVersionDetails, setShowVersionDetails] = useState(false);
 
   // Helper: consider a Java version "known" when it's a non-empty, meaningful string
   const isJavaVersionKnown = (v: any) => {
@@ -2811,6 +2819,7 @@ public class UserService {
               <label style={styles.label}>Source Java Version</label>
               {userSelectedVersion ? (
                 // Show selected version (read-only display)
+                // Only show Change button if version was NOT auto-detected
                 <div style={{
                   padding: "12px 14px",
                   fontSize: 14,
@@ -2823,30 +2832,49 @@ public class UserService {
                   alignItems: "center",
                   justifyContent: "space-between"
                 }}>
-                  <span>✓ Java {selectedSourceVersion}</span>
-                  <button
-                    onClick={() => {
-                      setSelectedSourceVersion("");
-                      setUserSelectedVersion(null);
-                      setSourceVersionStatus("unknown");
-                      setSelectedTargetVersion("");
-                    }}
-                    style={{
-                      fontSize: 12,
-                      backgroundColor: "transparent",
-                      border: "1px solid #059669",
-                      color: "#059669",
-                      borderRadius: 4,
-                      padding: "4px 8px",
-                      cursor: "pointer",
-                      fontWeight: 500
-                    }}
-                  >
-                    Change
-                  </button>
+                  <div>
+                    <span>✓ Java {selectedSourceVersion}</span>
+                    {sourceVersionStatus === "not_selected" && (
+                      <p style={{ fontSize: 11, margin: "4px 0 0 0", fontWeight: 400, color: "#059669" }}>
+                        (Manually selected)
+                      </p>
+                    )}
+                    {sourceVersionStatus === "detected" && (
+                      <p style={{ fontSize: 11, margin: "4px 0 0 0", fontWeight: 400, color: "#059669" }}>
+                        (Auto-detected from pom.xml/build.gradle)
+                      </p>
+                    )}
+                    {sourceVersions.find(v => v.value === selectedSourceVersion)?.description && (
+                      <p style={{ fontSize: 12, margin: "4px 0 0 0", fontWeight: 400, color: "#059669" }}>
+                        {sourceVersions.find(v => v.value === selectedSourceVersion)?.description}
+                      </p>
+                    )}
+                  </div>
+                  {sourceVersionStatus === "not_selected" && (
+                    <button
+                      onClick={() => {
+                        setSelectedSourceVersion("");
+                        setUserSelectedVersion(null);
+                        setSourceVersionStatus("unknown");
+                        setSelectedTargetVersion("");
+                      }}
+                      style={{
+                        fontSize: 12,
+                        backgroundColor: "transparent",
+                        border: "1px solid #059669",
+                        color: "#059669",
+                        borderRadius: 4,
+                        padding: "4px 8px",
+                        cursor: "pointer",
+                        fontWeight: 500
+                      }}
+                    >
+                      Change
+                    </button>
+                  )}
                 </div>
               ) : (
-                // Show Unknown with dropdown selector only when no version selected and detection failed
+                // Show all Java versions with filtering and grouping
                 <div>
                   <div style={{
                     padding: "12px 14px",
@@ -2856,12 +2884,120 @@ public class UserService {
                     backgroundColor: "#fef3c7",
                     color: "#92400e",
                     fontWeight: 500,
-                    marginBottom: 10
+                    marginBottom: 12
                   }}>
                     ⚠️ Java Version: Not Specified
                   </div>
+                  
+                  {/* Version Filter Tabs */}
+                  <div style={{ marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {[
+                      { key: "lts", label: "⭐ LTS Only", count: sourceVersions.filter(v => v.release_type === "LTS").length },
+                      { key: "all", label: "📚 All Versions", count: sourceVersions.length }
+                    ].map(tab => (
+                      <button
+                        key={tab.key}
+                        onClick={() => setVersionFilter(tab.key as any)}
+                        style={{
+                          padding: "8px 12px",
+                          borderRadius: 6,
+                          border: versionFilter === tab.key ? "2px solid #3b82f6" : "1px solid #cbd5e1",
+                          backgroundColor: versionFilter === tab.key ? "#dbeafe" : "#f8fafc",
+                          color: versionFilter === tab.key ? "#1e40af" : "#64748b",
+                          cursor: "pointer",
+                          fontSize: 12,
+                          fontWeight: 500
+                        }}
+                      >
+                        {tab.label} ({tab.count})
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setShowVersionDetails(!showVersionDetails)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 6,
+                        border: "1px solid #cbd5e1",
+                        backgroundColor: "#f8fafc",
+                        color: "#64748b",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontWeight: 500
+                      }}
+                    >
+                      {showVersionDetails ? "👁️ Hide Details" : "👁️ Show Details"}
+                    </button>
+                  </div>
+
+                  {/* Version Selection Grid */}
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                    gap: 10,
+                    marginBottom: 12
+                  }}>
+                    {sourceVersions
+                      .filter(v => versionFilter === "all" || v.release_type === "LTS")
+                      .map((version) => {
+                        const isLTS = version.release_type === "LTS";
+                        const isLatest = version.release_type === "Latest";
+                        return (
+                          <div
+                            key={version.value}
+                            onClick={() => {
+                              setSelectedSourceVersion(version.value);
+                              setUserSelectedVersion(version.value);
+                              setSourceVersionStatus("not_selected");
+                              setSelectedTargetVersion("");
+                            }}
+                            style={{
+                              padding: 12,
+                              borderRadius: 8,
+                              border: "2px solid #e2e8f0",
+                              backgroundColor: "#f8fafc",
+                              cursor: "pointer",
+                              transition: "all 0.3s ease",
+                              hover: {
+                                borderColor: "#3b82f6",
+                                backgroundColor: "#dbeafe"
+                              }
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = "#3b82f6";
+                              e.currentTarget.style.backgroundColor = "#dbeafe";
+                              e.currentTarget.style.transform = "translateY(-2px)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = isLTS || isLatest ? "#3b82f6" : "#e2e8f0";
+                              e.currentTarget.style.backgroundColor = isLTS || isLatest ? "#f0f9ff" : "#f8fafc";
+                              e.currentTarget.style.transform = "translateY(0)";
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                              <strong style={{ fontSize: 14, color: "#1e293b" }}>{version.label}</strong>
+                              {isLTS && <span style={{ fontSize: 11, backgroundColor: "#fbbf24", color: "#78350f", padding: "2px 6px", borderRadius: 4, fontWeight: 600 }}>LTS</span>}
+                              {isLatest && <span style={{ fontSize: 11, backgroundColor: "#ec4899", color: "#fff", padding: "2px 6px", borderRadius: 4, fontWeight: 600 }}>LATEST</span>}
+                            </div>
+                            
+                            {showVersionDetails && (
+                              <>
+                                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                                  <div><strong>Released:</strong> {version.release_date}</div>
+                                  <div><strong>EOL:</strong> {version.eol_date}</div>
+                                </div>
+                                <p style={{ fontSize: 11, color: "#475569", margin: "6px 0 0 0", lineHeight: "1.4" }}>
+                                  {version.description}
+                                </p>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  {/* Legacy Dropdown Fallback */}
                   <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#475569", marginBottom: 6 }}>
-                    Select Source Java Version:
+                    Or select from dropdown:
                   </label>
                   <select 
                     value=""
@@ -2870,7 +3006,7 @@ public class UserService {
                       if (newVersion) {
                         setSelectedSourceVersion(newVersion);
                         setUserSelectedVersion(newVersion);
-                        setSourceVersionStatus("detected");
+                        setSourceVersionStatus("not_selected");
                         setSelectedTargetVersion("");
                       }
                     }}
@@ -2890,12 +3026,14 @@ public class UserService {
                       <option key={v.value} value={v.value}>{v.label}</option>
                     ))}
                   </select>
+                  
                   <p style={styles.helpText}>
                     📋 No Java version found in pom.xml or build.gradle - Please select the source Java version manually
                   </p>
+                  
                   <div style={{
-                    marginTop: 10,
-                    padding: 10,
+                    marginTop: 12,
+                    padding: 12,
                     backgroundColor: "#dbeafe",
                     border: "1px solid #93c5fd",
                     borderRadius: 6,
@@ -2907,8 +3045,8 @@ public class UserService {
                     <ul style={{ margin: "6px 0 0 20px", paddingLeft: 0 }}>
                       <li>Check your project's pom.xml or build.gradle for Java version</li>
                       <li>Look for &lt;source&gt;, &lt;java.version&gt;, or sourceCompatibility</li>
-                      <li>If unsure, select Java 8 (most common)</li>
-                      <li>LTS versions (8, 11, 17, 21) are recommended</li>
+                      <li>⭐ LTS versions (8, 11, 17, 21) are recommended for production</li>
+                      <li>Use the grid above to easily browse all available versions</li>
                     </ul>
                   </div>
                 </div>
@@ -2916,24 +3054,123 @@ public class UserService {
             </div>
           <div style={styles.field}>
             <label style={styles.label}>Target Java Version</label>
-            <select 
-              style={styles.select} 
-              value={selectedTargetVersion} 
-              onChange={(e) => setSelectedTargetVersion(e.target.value)}
-              disabled={!selectedSourceVersion}
-            >
-              <option value="">-- Select a target Java version --</option>
-              {selectedSourceVersion
-                ? targetVersions.filter(v => parseInt(v.value) > parseInt(selectedSourceVersion)).map((v) => <option key={v.value} value={v.value}>{v.label}</option>)
-                : targetVersions.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)
-              }
-            </select>
-            <p style={styles.helpText}>
-              {selectedSourceVersion
-                ? "Only versions newer than source are available"
-                : "Select a source Java version first to see available target versions"
-              }
-            </p>
+            {!selectedSourceVersion ? (
+              <div style={{
+                padding: 12,
+                backgroundColor: "#fef3c7",
+                border: "1px solid #fbbf24",
+                borderRadius: 8,
+                color: "#92400e",
+                fontSize: 14
+              }}>
+                ⚠️ Select a source Java version first to see available target versions
+              </div>
+            ) : (
+              <div>
+                {/* Target Version Grid */}
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                  gap: 10,
+                  marginBottom: 12
+                }}>
+                  {targetVersions
+                    .filter(v => parseInt(v.value) > parseInt(selectedSourceVersion))
+                    .map((version) => {
+                      const isLTS = version.release_type === "LTS";
+                      const isLatest = version.release_type === "Latest";
+                      const isSelected = version.value === selectedTargetVersion;
+                      return (
+                        <div
+                          key={version.value}
+                          onClick={() => setSelectedTargetVersion(version.value)}
+                          style={{
+                            padding: 12,
+                            borderRadius: 8,
+                            border: isSelected ? "2px solid #10b981" : "2px solid #e2e8f0",
+                            backgroundColor: isSelected ? "#f0fdf4" : "#f8fafc",
+                            cursor: "pointer",
+                            transition: "all 0.3s ease"
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isSelected) {
+                              e.currentTarget.style.borderColor = "#3b82f6";
+                              e.currentTarget.style.backgroundColor = "#dbeafe";
+                              e.currentTarget.style.transform = "translateY(-2px)";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!isSelected) {
+                              e.currentTarget.style.borderColor = "#e2e8f0";
+                              e.currentTarget.style.backgroundColor = "#f8fafc";
+                              e.currentTarget.style.transform = "translateY(0)";
+                            }
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                            <strong style={{ fontSize: 14, color: isSelected ? "#10b981" : "#1e293b" }}>
+                              {isSelected && "✓ "}{version.label}
+                            </strong>
+                            {isLTS && <span style={{ fontSize: 11, backgroundColor: "#fbbf24", color: "#78350f", padding: "2px 6px", borderRadius: 4, fontWeight: 600 }}>LTS</span>}
+                            {isLatest && <span style={{ fontSize: 11, backgroundColor: "#ec4899", color: "#fff", padding: "2px 6px", borderRadius: 4, fontWeight: 600 }}>LATEST</span>}
+                          </div>
+                          
+                          {showVersionDetails && (
+                            <>
+                              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                                <div><strong>Released:</strong> {version.release_date}</div>
+                                <div><strong>EOL:</strong> {version.eol_date}</div>
+                              </div>
+                              <p style={{ fontSize: 11, color: "#475569", margin: "6px 0 0 0", lineHeight: "1.4" }}>
+                                {version.description}
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+
+                {/* Fallback Dropdown */}
+                <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#475569", marginBottom: 6 }}>
+                  Or select from dropdown:
+                </label>
+                <select 
+                  style={styles.select} 
+                  value={selectedTargetVersion} 
+                  onChange={(e) => setSelectedTargetVersion(e.target.value)}
+                >
+                  <option value="">-- Select a target Java version --</option>
+                  {targetVersions
+                    .filter(v => parseInt(v.value) > parseInt(selectedSourceVersion))
+                    .map((v) => <option key={v.value} value={v.value}>{v.label}</option>)
+                  }
+                </select>
+                
+                <p style={styles.helpText}>
+                  💡 Migrating from Java {selectedSourceVersion} • Only versions newer than source are shown
+                </p>
+                
+                {selectedTargetVersion && (
+                  <div style={{
+                    marginTop: 12,
+                    padding: 12,
+                    backgroundColor: "#f0fdf4",
+                    border: "1px solid #86efac",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    color: "#15803d"
+                  }}>
+                    <strong>✓ Target selected:</strong> Java {selectedTargetVersion}
+                    {targetVersions.find(v => v.value === selectedTargetVersion)?.description && (
+                      <p style={{ margin: "6px 0 0 0" }}>
+                        {targetVersions.find(v => v.value === selectedTargetVersion)?.description}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

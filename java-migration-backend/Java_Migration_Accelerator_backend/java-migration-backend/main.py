@@ -1515,35 +1515,217 @@ def calculate_duration(start_time, end_time):
 # Version and Recipe Endpoints
 @app.get("/api/java-versions")
 async def get_java_versions():
-    """Get supported Java versions for migration (from Java 1 to latest)"""
+    """
+    Get all supported Java versions for migration (Java 1 to Java 24+)
+    Includes detailed information about each version:
+    - value: version number
+    - label: display name with release type (LTS/Latest)
+    - release_type: LTS, LATEST, or Standard
+    - release_date: approximate release date
+    - eol_date: End of Life date
+    - description: key features and improvements
+    """
     all_versions = [
-        {"value": "1", "label": "Java 1 (Legacy)"},
-        {"value": "2", "label": "Java 2 (Legacy)"},
-        {"value": "3", "label": "Java 3 (Legacy)"},
-        {"value": "4", "label": "Java 4 (Legacy)"},
-        {"value": "5", "label": "Java 5"},
-        {"value": "6", "label": "Java 6"},
-        {"value": "7", "label": "Java 7"},
-        {"value": "8", "label": "Java 8 (LTS)"},
-        {"value": "9", "label": "Java 9"},
-        {"value": "10", "label": "Java 10"},
-        {"value": "11", "label": "Java 11 (LTS)"},
-        {"value": "12", "label": "Java 12"},
-        {"value": "13", "label": "Java 13"},
-        {"value": "14", "label": "Java 14"},
-        {"value": "15", "label": "Java 15"},
-        {"value": "16", "label": "Java 16"},
-        {"value": "17", "label": "Java 17 (LTS)"},
-        {"value": "18", "label": "Java 18"},
-        {"value": "19", "label": "Java 19"},
-        {"value": "20", "label": "Java 20"},
-        {"value": "21", "label": "Java 21 (LTS)"},
-        {"value": "22", "label": "Java 22"},
-        {"value": "23", "label": "Java 23"}
+        {
+            "value": "1",
+            "label": "Java 1 (Legacy)",
+            "release_type": "Legacy",
+            "release_date": "1996",
+            "eol_date": "2002",
+            "description": "Original Java release"
+        },
+        {
+            "value": "2",
+            "label": "Java 2 (Legacy)",
+            "release_type": "Legacy",
+            "release_date": "1998",
+            "eol_date": "2005",
+            "description": "Collections Framework, Swing, Servlets"
+        },
+        {
+            "value": "3",
+            "label": "Java 3 (Legacy)",
+            "release_type": "Legacy",
+            "release_date": "2000",
+            "eol_date": "2006",
+            "description": "HotSpot JVM, JNDI, RMI"
+        },
+        {
+            "value": "4",
+            "label": "Java 4 (Legacy)",
+            "release_type": "Legacy",
+            "release_date": "2002",
+            "eol_date": "2008",
+            "description": "Assertions, XML processing, Regular Expressions"
+        },
+        {
+            "value": "5",
+            "label": "Java 5 (Legacy)",
+            "release_type": "Legacy",
+            "release_date": "2004",
+            "eol_date": "2009",
+            "description": "Generics, Enums, Autoboxing, Annotations"
+        },
+        {
+            "value": "6",
+            "label": "Java 6 (Legacy)",
+            "release_type": "Legacy",
+            "release_date": "2006",
+            "eol_date": "2018",
+            "description": "Desktop features, Web services, Scripting"
+        },
+        {
+            "value": "7",
+            "label": "Java 7 (Legacy)",
+            "release_type": "Legacy",
+            "release_date": "2011",
+            "eol_date": "2022",
+            "description": "Try-with-resources, Diamond operator, NIO.2"
+        },
+        {
+            "value": "8",
+            "label": "Java 8 (LTS)",
+            "release_type": "LTS",
+            "release_date": "2014",
+            "eol_date": "2030",
+            "description": "Lambda expressions, Streams, Functional interfaces, Optional"
+        },
+        {
+            "value": "9",
+            "label": "Java 9 (Standard)",
+            "release_type": "Standard",
+            "release_date": "2017",
+            "eol_date": "2018",
+            "description": "Modules (Project Jigsaw), REPL (jshell)"
+        },
+        {
+            "value": "10",
+            "label": "Java 10 (Standard)",
+            "release_type": "Standard",
+            "release_date": "2018",
+            "eol_date": "2018",
+            "description": "Local variable type inference (var), var-args"
+        },
+        {
+            "value": "11",
+            "label": "Java 11 (LTS)",
+            "release_type": "LTS",
+            "release_date": "2018",
+            "eol_date": "2026",
+            "description": "String methods, HTTP/2 client, Files API enhancements"
+        },
+        {
+            "value": "12",
+            "label": "Java 12 (Standard)",
+            "release_type": "Standard",
+            "release_date": "2019",
+            "eol_date": "2019",
+            "description": "Switch expressions (preview), Compact number formatting"
+        },
+        {
+            "value": "13",
+            "label": "Java 13 (Standard)",
+            "release_type": "Standard",
+            "release_date": "2019",
+            "eol_date": "2020",
+            "description": "Text blocks (preview), Dynamic class-file constants"
+        },
+        {
+            "value": "14",
+            "label": "Java 14 (Standard)",
+            "release_type": "Standard",
+            "release_date": "2020",
+            "eol_date": "2020",
+            "description": "Records (preview), Pattern matching (preview)"
+        },
+        {
+            "value": "15",
+            "label": "Java 15 (Standard)",
+            "release_type": "Standard",
+            "release_date": "2020",
+            "eol_date": "2021",
+            "description": "Text blocks (finalized), Sealed classes (preview)"
+        },
+        {
+            "value": "16",
+            "label": "Java 16 (Standard)",
+            "release_type": "Standard",
+            "release_date": "2021",
+            "eol_date": "2021",
+            "description": "Records (finalized), Pattern matching, instanceof"
+        },
+        {
+            "value": "17",
+            "label": "Java 17 (LTS)",
+            "release_type": "LTS",
+            "release_date": "2021",
+            "eol_date": "2029",
+            "description": "Sealed classes, Pattern matching, Strong encapsulation"
+        },
+        {
+            "value": "18",
+            "label": "Java 18 (Standard)",
+            "release_type": "Standard",
+            "release_date": "2022",
+            "eol_date": "2022",
+            "description": "UTF-8 by default, Simple web server, Finalization deprecation"
+        },
+        {
+            "value": "19",
+            "label": "Java 19 (Standard)",
+            "release_type": "Standard",
+            "release_date": "2022",
+            "eol_date": "2023",
+            "description": "Virtual threads (preview), Record patterns (preview)"
+        },
+        {
+            "value": "20",
+            "label": "Java 20 (Standard)",
+            "release_type": "Standard",
+            "release_date": "2023",
+            "eol_date": "2023",
+            "description": "Virtual threads (preview), Structured concurrency (preview)"
+        },
+        {
+            "value": "21",
+            "label": "Java 21 (LTS)",
+            "release_type": "LTS",
+            "release_date": "2023",
+            "eol_date": "2031",
+            "description": "Virtual threads (finalized), Pattern matching (finalized), Record patterns"
+        },
+        {
+            "value": "22",
+            "label": "Java 22 (Standard)",
+            "release_type": "Standard",
+            "release_date": "2024",
+            "eol_date": "2024",
+            "description": "Unnamed variables and patterns, Stream gatherers"
+        },
+        {
+            "value": "23",
+            "label": "Java 23 (Standard)",
+            "release_type": "Standard",
+            "release_date": "2024",
+            "eol_date": "2025",
+            "description": "Primitive types (preview), Module imports (preview)"
+        },
+        {
+            "value": "24",
+            "label": "Java 24 (Latest)",
+            "release_type": "Latest",
+            "release_date": "2025",
+            "eol_date": "2025",
+            "description": "Latest features and improvements"
+        }
     ]
+    
     return {
         "source_versions": all_versions,
-        "target_versions": all_versions
+        "target_versions": all_versions,
+        "lts_versions": [v for v in all_versions if v["release_type"] == "LTS"],
+        "latest_version": "24",
+        "recommended_target": "21"  # Recommended is Java 21 LTS
     }
 
 
