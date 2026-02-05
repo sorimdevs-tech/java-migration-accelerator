@@ -5,11 +5,7 @@ services:
   # Java Migration Accelerator - Main Application
   # ================================================================
   java-migration-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - BUILDKIT_INLINE_CACHE=1
+    image: java-migration-accelerator:latest
     
     container_name: java-migration-accelerator
     
@@ -42,19 +38,16 @@ services:
       # FOSSA Configuration (Optional)
       - FOSSA_API_KEY=${FOSSA_API_KEY:-}
       
-      # Frontend URL
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
+      # API Configuration
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:8001}
       - BACKEND_URL=${BACKEND_URL:-http://localhost:8001}
-      - AUTH_REDIRECT_URI=${AUTH_REDIRECT_URI:-http://localhost:5173/auth/callback}
+      - AUTH_REDIRECT_URI=${AUTH_REDIRECT_URI:-http://localhost:8001/auth/callback}
     
     volumes:
       # Persistent storage for migrations
       - migrations_data:/tmp/migrations
       - app_logs:/app/logs
       - app_data:/app/data
-      
-      # Development (optional - comment out for production)
-      # - ./java-migration-backend:/app/backend:delegated
     
     # Resource limits
     deploy:
@@ -88,6 +81,13 @@ services:
       - java-migration-net
 
 # ================================================================
+# Network Definition
+# ================================================================
+networks:
+  java-migration-net:
+    driver: bridge
+
+# ================================================================
 # Persistent Volumes
 # ================================================================
 volumes:
@@ -97,14 +97,3 @@ volumes:
     driver: local
   app_data:
     driver: local
-
-# ================================================================
-# Docker Network
-# ================================================================
-networks:
-  java-migration-net:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
-

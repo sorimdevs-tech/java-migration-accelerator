@@ -1,0 +1,54 @@
+✅ BUILD SCRIPT FIX APPLIED!
+════════════════════════════════════════════════════════════════
+
+The build-tar.bat script has been updated to work from the docker-deployment directory.
+
+📊 BUILD STATUS:
+════════════════════════════════════════════════════════════════
+
+✅ Docker daemon: Running
+✅ Dockerfile: Found (navigated to project root automatically)
+✅ Docker image: Building...
+✅ Status: Compressing tar file (in progress)
+
+Expected output: java-migration-accelerator-latest.tar.gz (~2.5GB)
+
+⏱️ TIMING:
+════════════════════════════════════════════════════════════════
+
+First build typically takes:
+  • Docker image build: 15-25 minutes
+  • Tar compression: 5-10 minutes
+  • Total: 20-35 minutes
+
+The build is running in the background. Check back in a few minutes.
+
+📁 LOCATION:
+════════════════════════════════════════════════════════════════
+
+The tar file will be created in:
+  c:\Users\MSI\java-migration-accelerator\java-migration-accelerator-latest.tar.gz
+
+Once created, copy it to docker-deployment folder:
+  copy c:\Users\MSI\java-migration-accelerator\java-migration-accelerator-latest.tar.gz ^
+       c:\Users\MSI\java-migration-accelerator\docker-deployment\
+
+✅ NEXT STEPS AFTER BUILD:
+════════════════════════════════════════════════════════════════
+
+1. Wait for tar file to be created (~2.5GB)
+2. Copy tar file to docker-deployment folder
+3. Run: .\load-image.ps1  (in docker-deployment folder)
+4. Configure: copy .env.example .env
+5. Deploy: docker-compose up -d
+6. Access: http://localhost:8001
+
+Monitor the build progress by checking file size:
+  Get-Item *.tar.gz | Format-List -Property Name, Length
+
+Or check Docker image:
+  docker image ls | grep java-migration
+
+════════════════════════════════════════════════════════════════
+The build is running. Please be patient - this is normal!
+════════════════════════════════════════════════════════════════

@@ -2818,14 +2818,36 @@ public class UserService {
                   border: "1px solid #10b981",
                   backgroundColor: "#f0fdf4",
                   color: "#1e293b",
-                  fontWeight: 600
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between"
                 }}>
-                  ✓ Java {selectedSourceVersion}
+                  <span>✓ Java {selectedSourceVersion}</span>
+                  <button
+                    onClick={() => {
+                      setSelectedSourceVersion("");
+                      setUserSelectedVersion(null);
+                      setSourceVersionStatus("unknown");
+                      setSelectedTargetVersion("");
+                    }}
+                    style={{
+                      fontSize: 12,
+                      backgroundColor: "transparent",
+                      border: "1px solid #059669",
+                      color: "#059669",
+                      borderRadius: 4,
+                      padding: "4px 8px",
+                      cursor: "pointer",
+                      fontWeight: 500
+                    }}
+                  >
+                    Change
+                  </button>
                 </div>
               ) : (
                 // Show Unknown with dropdown selector only when no version selected and detection failed
-                (!userSelectedVersion && sourceVersionStatus === "unknown") ? (
-                <>
+                <div>
                   <div style={{
                     padding: "12px 14px",
                     fontSize: 14,
@@ -2836,17 +2858,21 @@ public class UserService {
                     fontWeight: 500,
                     marginBottom: 10
                   }}>
-                    ⚠️ Java Version: Unknown
+                    ⚠️ Java Version: Not Specified
                   </div>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#475569", marginBottom: 6 }}>
                     Select Source Java Version:
                   </label>
                   <select 
-                    value={selectedSourceVersion}
+                    value=""
                     onChange={(e) => {
-                      setSelectedSourceVersion(e.target.value);
-                      setUserSelectedVersion(e.target.value);
-                      setSourceVersionStatus("detected");
+                      const newVersion = e.target.value;
+                      if (newVersion) {
+                        setSelectedSourceVersion(newVersion);
+                        setUserSelectedVersion(newVersion);
+                        setSourceVersionStatus("detected");
+                        setSelectedTargetVersion("");
+                      }
                     }}
                     style={{
                       width: "100%",
@@ -2860,58 +2886,52 @@ public class UserService {
                     }}
                   >
                     <option value="">-- Select a Java version --</option>
-                    {sourceVersions.map((v) => (
+                    {sourceVersions && sourceVersions.length > 0 && sourceVersions.map((v) => (
                       <option key={v.value} value={v.value}>{v.label}</option>
                     ))}
                   </select>
                   <p style={styles.helpText}>
-                    📋 No Java version found in pom.xml or build.gradle - Please select the source Java version manually above
+                    📋 No Java version found in pom.xml or build.gradle - Please select the source Java version manually
                   </p>
-                </>
-                ) : null
-              )}
-              <p style={styles.helpText}>
-                {userSelectedVersion
-                  ? "✓ Source version selected - ready for migration"
-                  : (repoAnalysis?.java_version_detected_from_build === false
-                      ? "📋 No Java version found in pom.xml or build.gradle - Please select the source Java version manually above"
-                      : null)
-                }
-              </p>
-              {!userSelectedVersion && (
-                <div style={{
-                  marginTop: 10,
-                  padding: 10,
-                  backgroundColor: "#dbeafe",
-                  border: "1px solid #93c5fd",
-                  borderRadius: 6,
-                  fontSize: 12,
-                  color: "#1e40af",
-                  lineHeight: "1.6"
-                }}>
-                  <strong>💡 How to select:</strong>
-                  <ul style={{ margin: "6px 0 0 20px", paddingLeft: 0 }}>
-                    <li>Check your project's pom.xml or build.gradle for Java version</li>
-                    <li>Look for &lt;source&gt;, &lt;java.version&gt;, or sourceCompatibility</li>
-                    <li>If unsure, select Java 8 (most common)</li>
-                    <li>LTS versions (8, 11, 17, 21) are recommended</li>
-                  </ul>
+                  <div style={{
+                    marginTop: 10,
+                    padding: 10,
+                    backgroundColor: "#dbeafe",
+                    border: "1px solid #93c5fd",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    color: "#1e40af",
+                    lineHeight: "1.6"
+                  }}>
+                    <strong>💡 How to select:</strong>
+                    <ul style={{ margin: "6px 0 0 20px", paddingLeft: 0 }}>
+                      <li>Check your project's pom.xml or build.gradle for Java version</li>
+                      <li>Look for &lt;source&gt;, &lt;java.version&gt;, or sourceCompatibility</li>
+                      <li>If unsure, select Java 8 (most common)</li>
+                      <li>LTS versions (8, 11, 17, 21) are recommended</li>
+                    </ul>
+                  </div>
                 </div>
               )}
             </div>
           <div style={styles.field}>
             <label style={styles.label}>Target Java Version</label>
-            <select style={styles.select} value={selectedTargetVersion} onChange={(e) => setSelectedTargetVersion(e.target.value)}>
+            <select 
+              style={styles.select} 
+              value={selectedTargetVersion} 
+              onChange={(e) => setSelectedTargetVersion(e.target.value)}
+              disabled={!selectedSourceVersion}
+            >
               <option value="">-- Select a target Java version --</option>
-              {userSelectedVersion
+              {selectedSourceVersion
                 ? targetVersions.filter(v => parseInt(v.value) > parseInt(selectedSourceVersion)).map((v) => <option key={v.value} value={v.value}>{v.label}</option>)
                 : targetVersions.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)
               }
             </select>
             <p style={styles.helpText}>
-              {userSelectedVersion
+              {selectedSourceVersion
                 ? "Only versions newer than source are available"
-                : "All target versions available - no source version constraint"
+                : "Select a source Java version first to see available target versions"
               }
             </p>
           </div>

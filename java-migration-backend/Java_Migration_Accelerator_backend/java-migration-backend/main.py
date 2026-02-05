@@ -12,7 +12,10 @@ from enum import Enum
 import uuid
 import os
 import re
+import logging
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 from dotenv import load_dotenv
@@ -39,6 +42,11 @@ app.include_router(auth_router, prefix="/api")
 
 # Default GitHub token from environment variable (set in Render dashboard)
 DEFAULT_GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+
+# Log token status for debugging
+print(f"[INIT] GitHub token loaded: {'✓' if DEFAULT_GITHUB_TOKEN else '✗ (empty - will use unauthenticated requests)'}")
+if DEFAULT_GITHUB_TOKEN:
+    print(f"[INIT] Token length: {len(DEFAULT_GITHUB_TOKEN)} chars")
 
 # CORS middleware
 app.add_middleware(
@@ -264,10 +272,16 @@ class SonarAggregateResult(BaseModel):
     note: Optional[str] = None
 
 
+# Root endpoint removed - static files will be served by the StaticFiles mount
+# This allows index.html to be served when accessing http://localhost:8001/
+# API endpoints take precedence over static files due to mounting order
+
+
 @app.get("/")
-@app.head("/")
 async def root():
-    return {"message": "Java Migration Accelerator API", "version": "1.0.0"}
+    """Redirect to frontend or serve API info"""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/index.html")
 
 
 @app.get("/health")
@@ -398,6 +412,11 @@ async def analyze_repo_url(repo_url: str, token: str = ""):
         
         # Use user token if provided, otherwise use default (may be empty but that's OK for public repos)
         effective_token = token.strip() if token and token.strip() else DEFAULT_GITHUB_TOKEN
+        
+        # Log token usage for debugging
+        has_user_token = bool(token and token.strip())
+        has_default_token = bool(DEFAULT_GITHUB_TOKEN)
+        print(f"[analyze-url] repo={owner}/{repo} | user_token={'yes' if has_user_token else 'no'} | default_token={'yes' if has_default_token else 'no'} | using={'user' if has_user_token else ('default' if has_default_token else 'none (unauthenticated)')}")
         
         analysis = await github_service.analyze_repository(effective_token, owner, repo, repo_url)
         return {
@@ -2106,6 +2125,197 @@ def add_log(job_id: str, message: str):
     if job_id in migration_jobs:
         timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
         migration_jobs[job_id].migration_log.append(f"[{timestamp}] {message}")
+
+
+# ============== Repository Analysis Endpoints ==============
+
+@app.post("/api/repository/analyze")
+async def analyze_repository_comprehensive(repo_url: str, token: str = ""):
+    """
+    Comprehensive repository analysis including:
+    - Maven/Gradle dependencies
+    - Business logic issues
+    - Testing coverage
+    - Code refactoring opportunities
+    - Overall health score
+    """
+    try:
+        from services.repository_analyzer import RepositoryAnalyzer
+        
+        # Determine which service to use
+        if 'gitlab.com' in repo_url:
+            repo_service = gitlab_service
+        else:
+            repo_service = github_service
+        
+        effective_token = token.strip() if token and token.strip() else DEFAULT_GITHUB_TOKEN
+        
+        # Clone repository
+        clone_path = await repo_service.clone_repository(effective_token, repo_url)
+        
+        # Run comprehensive analysis
+        analyzer = RepositoryAnalyzer()
+        analysis_result = await analyzer.analyze_repository(clone_path)
+        
+        return {
+            "repo_url": repo_url,
+            "analysis_timestamp": str(datetime.now(timezone.utc)),
+            **analysis_result
+        }
+    except Exception as e:
+        import traceback
+        logger.error(f"Repository analysis error: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@app.get("/api/repository/dependencies")
+async def analyze_dependencies(repo_url: str, token: str = ""):
+    """
+    Analyze dependencies in a repository (Maven pom.xml and Gradle build.gradle)
+    Returns detailed dependency information including vulnerabilities
+    """
+    try:
+        from services.repository_analyzer import RepositoryAnalyzer
+        
+        # Determine which service to use
+        if 'gitlab.com' in repo_url:
+            repo_service = gitlab_service
+        else:
+            repo_service = github_service
+        
+        effective_token = token.strip() if token and token.strip() else DEFAULT_GITHUB_TOKEN
+        
+        # Clone repository
+        clone_path = await repo_service.clone_repository(effective_token, repo_url)
+        
+        # Run dependency analysis
+        analyzer = RepositoryAnalyzer()
+        deps_result = await analyzer._analyze_dependencies(clone_path)
+        
+        return {
+            "repo_url": repo_url,
+            "dependencies": deps_result,
+            "analysis_timestamp": str(datetime.now(timezone.utc))
+        }
+    except Exception as e:
+        import traceback
+        logger.error(f"Dependency analysis error: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Dependency analysis failed: {str(e)}")
+
+
+@app.get("/api/repository/business-logic")
+async def analyze_business_logic(repo_url: str, token: str = ""):
+    """
+    Analyze business logic issues in a repository
+    Detects potential bugs, anti-patterns, and code quality issues
+    """
+    try:
+        from services.repository_analyzer import RepositoryAnalyzer
+        
+        # Determine which service to use
+        if 'gitlab.com' in repo_url:
+            repo_service = gitlab_service
+        else:
+            repo_service = github_service
+        
+        effective_token = token.strip() if token and token.strip() else DEFAULT_GITHUB_TOKEN
+        
+        # Clone repository
+        clone_path = await repo_service.clone_repository(effective_token, repo_url)
+        
+        # Run business logic analysis
+        analyzer = RepositoryAnalyzer()
+        business_logic_issues = await analyzer._analyze_business_logic(clone_path)
+        
+        # Group by severity
+        by_severity = {}
+        for issue in business_logic_issues:
+            severity = issue.get('severity', 'INFO')
+            if severity not in by_severity:
+                by_severity[severity] = []
+            by_severity[severity].append(issue)
+        
+        return {
+            "repo_url": repo_url,
+            "issues": business_logic_issues,
+            "by_severity": by_severity,
+            "total_issues": len(business_logic_issues),
+            "analysis_timestamp": str(datetime.now(timezone.utc))
+        }
+    except Exception as e:
+        import traceback
+        logger.error(f"Business logic analysis error: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Business logic analysis failed: {str(e)}")
+
+
+@app.get("/api/repository/testing")
+async def analyze_testing(repo_url: str, token: str = ""):
+    """
+    Analyze testing coverage and test framework usage
+    Provides recommendations for improving test coverage
+    """
+    try:
+        from services.repository_analyzer import RepositoryAnalyzer
+        
+        # Determine which service to use
+        if 'gitlab.com' in repo_url:
+            repo_service = gitlab_service
+        else:
+            repo_service = github_service
+        
+        effective_token = token.strip() if token and token.strip() else DEFAULT_GITHUB_TOKEN
+        
+        # Clone repository
+        clone_path = await repo_service.clone_repository(effective_token, repo_url)
+        
+        # Run testing analysis
+        analyzer = RepositoryAnalyzer()
+        testing_result = await analyzer._analyze_testing(clone_path)
+        
+        return {
+            "repo_url": repo_url,
+            "testing": testing_result,
+            "analysis_timestamp": str(datetime.now(timezone.utc))
+        }
+    except Exception as e:
+        import traceback
+        logger.error(f"Testing analysis error: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Testing analysis failed: {str(e)}")
+
+
+@app.get("/api/repository/refactoring")
+async def analyze_code_refactoring(repo_url: str, token: str = ""):
+    """
+    Analyze code refactoring opportunities
+    Identifies code smells and suggests improvements
+    """
+    try:
+        from services.repository_analyzer import RepositoryAnalyzer
+        
+        # Determine which service to use
+        if 'gitlab.com' in repo_url:
+            repo_service = gitlab_service
+        else:
+            repo_service = github_service
+        
+        effective_token = token.strip() if token and token.strip() else DEFAULT_GITHUB_TOKEN
+        
+        # Clone repository
+        clone_path = await repo_service.clone_repository(effective_token, repo_url)
+        
+        # Run refactoring analysis
+        analyzer = RepositoryAnalyzer()
+        refactoring_result = await analyzer._analyze_code_refactoring(clone_path)
+        
+        return {
+            "repo_url": repo_url,
+            "refactoring": refactoring_result,
+            "analysis_timestamp": str(datetime.now(timezone.utc))
+        }
+    except Exception as e:
+        import traceback
+        logger.error(f"Refactoring analysis error: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Refactoring analysis failed: {str(e)}")
 
 
 # Mount static files (frontend) - MUST be LAST to avoid catching API routes

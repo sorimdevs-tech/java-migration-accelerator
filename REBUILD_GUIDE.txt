@@ -1,0 +1,156 @@
+🔧 FIX GITHUB TOKEN & REBUILD DOCKER
+════════════════════════════════════════════════════════════════
+
+❌ CURRENT ISSUE:
+   GitHub token is only 26 characters (should be 40+)
+   Result: 401 "Bad credentials" error
+
+✅ SOLUTION (5 Steps):
+════════════════════════════════════════════════════════════════
+
+STEP 1: Get a NEW GitHub Personal Access Token
+──────────────────────────────────────────────
+
+1. Open: https://github.com/settings/tokens
+2. Click "Generate new token" → "Generate new token (classic)"
+3. Fill in:
+   - Token name: Java Migration Accelerator
+   - Expiration: 90 days (or your preference)
+4. Select SCOPES:
+   ✅ repo (full control of private repositories)
+   ✅ read:user (read user profile)
+5. Click "Generate token"
+6. ⚠️ IMPORTANT: COPY THE ENTIRE TOKEN NOW!
+   (It won't show again, starts with "ghp_")
+7. Token should be 40-50+ characters
+
+
+STEP 2: Update .env File
+────────────────────────
+
+PowerShell:
+   notepad java-migration-backend\Java_Migration_Accelerator_backend\java-migration-backend\.env
+
+Find this line:
+   GITHUB_TOKEN=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hanges
+
+Replace with your NEW token:
+   GITHUB_TOKEN=ghp_your_new_full_token_here_40_chars_or_more
+
+Example:
+   GITHUB_TOKEN=ghp_1A2B3C4D5E6F7G8H9I0JK1L2M3N4O5P6Q7R8S9T0U
+
+Save & close!
+
+
+STEP 3: Rebuild Docker Image
+──────────────────────────────
+
+From VS Code Terminal (cd to project root):
+
+   cd c:\Users\MSI\java-migration-accelerator
+   .\rebuild-docker.bat
+
+OR manually:
+
+   docker-compose down
+   docker system prune -f
+   docker build -t java-migration-accelerator:latest -f Dockerfile .
+   docker-compose up -d
+
+Wait 15-25 minutes for build to complete...
+
+
+STEP 4: Verify Docker is Running
+──────────────────────────────────
+
+PowerShell:
+   docker ps | Select-String java-migration
+
+Should show:
+   java-migration-app    Running
+
+Check token loaded:
+   docker logs java-migration-app | Select-String "GitHub token"
+
+Should show:
+   [INIT] GitHub token loaded: ✓
+   [INIT] Token length: 40+ chars
+
+
+STEP 5: Test the Application
+──────────────────────────────
+
+1. Open browser: http://localhost:8001
+2. Try analyzing a repo: https://github.com/gradle/gradle
+3. Should work WITHOUT errors!
+
+
+════════════════════════════════════════════════════════════════
+✅ QUICK COMMANDS:
+════════════════════════════════════════════════════════════════
+
+# Edit .env
+notepad java-migration-backend\Java_Migration_Accelerator_backend\java-migration-backend\.env
+
+# Rebuild & restart
+docker-compose down
+docker system prune -f
+docker build -t java-migration-accelerator:latest .
+docker-compose up -d
+
+# Check status
+docker ps
+docker logs java-migration-app -f
+
+# View token length
+docker logs java-migration-app | Select-String "Token length"
+
+
+════════════════════════════════════════════════════════════════
+🚀 RUN FROM VS CODE TERMINAL:
+════════════════════════════════════════════════════════════════
+
+1. Open VS Code
+2. Terminal → New Terminal (Ctrl + `)
+3. Make sure you're in project root:
+   cd c:\Users\MSI\java-migration-accelerator
+
+4. Run the rebuild script:
+   .\rebuild-docker.bat
+
+OR run commands manually:
+   docker-compose down
+   docker build -t java-migration-accelerator:latest .
+   docker-compose up -d
+
+5. Watch logs:
+   docker logs java-migration-app -f
+
+6. When you see "Uvicorn running on http://0.0.0.0:8001", it's ready!
+7. Access: http://localhost:8001
+
+
+════════════════════════════════════════════════════════════════
+❓ NEED HELP?
+════════════════════════════════════════════════════════════════
+
+Issue: Token still invalid
+  → Make sure you copied the ENTIRE token including "ghp_" prefix
+  → Should be 40-50+ characters
+  → Restart Docker: docker-compose restart
+
+Issue: Build fails
+  → Check disk space: df -h
+  → Check Docker running: docker ps
+  → Clear Docker: docker system prune -a
+
+Issue: App not accessible
+  → Check port 8001 is free: netstat -ano | findstr 8001
+  → Check logs: docker logs java-migration-app
+  → Wait for startup: Give it 30 seconds after docker-compose up
+
+
+════════════════════════════════════════════════════════════════
+That's it! You're ready to go! 🎉
+════════════════════════════════════════════════════════════════

@@ -1,0 +1,231 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                      QUICK FIX & RUN GUIDE                                     ║
+║            Docker + GitHub Token + Complete Application Setup                  ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ ⚠️  YOUR CURRENT PROBLEM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   ❌ Token length: 26 chars (INVALID!)
+   ❌ Error: 401 "Bad credentials" from GitHub
+   ❌ Cannot analyze repositories
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ ✅ THE SOLUTION IN 2 STEPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+STEP 1: Open VS Code Terminal
+   • Press: Ctrl + ` (backtick key)
+   • Or: View → Terminal
+   • You should see: PS C:\Users\MSI\java-migration-accelerator>
+
+STEP 2: Run the automated fix script
+   • Type: .\rebuild-and-fix.ps1
+   • Press: Enter
+   • Wait for build (15-25 minutes)
+
+That's it! The script will:
+   ✓ Ask you for your GitHub token (if needed)
+   ✓ Update .env file
+   ✓ Clean Docker
+   ✓ Rebuild image
+   ✓ Start containers
+   ✓ Verify everything works
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 📋 HOW TO GET A GITHUB TOKEN (Takes 2 minutes)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Go to: https://github.com/settings/tokens
+
+2. Click: Generate new token → Generate new token (classic)
+
+3. Fill in the form:
+   Token name: Java Migration Accelerator
+   Expiration: 90 days
+
+4. Check these scopes:
+   ☑ repo (full control of private repositories)
+   ☑ read:user (read user profile)
+
+5. Click: Generate token
+
+6. ⚠️  COPY THE FULL TOKEN IMMEDIATELY
+   • GitHub won't show it again!
+   • Should start with: ghp_
+   • Should be 40-50+ characters long
+   • Example: ghp_1A2B3C4D5E6F7G8H9I0JK1L2M3N4O5P6Q7R8S9T0U
+
+7. When script asks for token, paste it (Ctrl+V)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 🚀 RUNNING THE SCRIPT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+From VS Code Terminal (Ctrl + `):
+
+   cd c:\Users\MSI\java-migration-accelerator
+   .\rebuild-and-fix.ps1
+
+OR (if PowerShell script won't run):
+
+   cd c:\Users\MSI\java-migration-accelerator
+   .\rebuild-and-fix.bat
+
+The script will:
+   ✓ Check Docker is running
+   ✓ Ask for GitHub token (if current one is invalid)
+   ✓ Update .env file
+   ✓ Stop old containers
+   ✓ Clean Docker
+   ✓ Build new image (15-25 min)
+   ✓ Start containers
+   ✓ Verify everything
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ ✅ AFTER THE BUILD FINISHES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Open your browser:
+   http://localhost:8001
+
+2. You should see the Java Migration Accelerator UI
+
+3. Test it works:
+   • Paste this GitHub repo: https://github.com/gradle/gradle
+   • Click Analyze
+   • Should see data without 400/401 errors! ✓
+
+4. Check the token is loaded correctly:
+   In terminal, run:
+      docker logs java-migration-app | Select-String "Token"
+   
+   Should show:
+      [INIT] Token length: 40+ chars ✓ (not 26 chars!)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 📝 IF YOU WANT TO UPDATE TOKEN MANUALLY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Open the .env file:
+   notepad .\java-migration-backend\Java_Migration_Accelerator_backend\java-migration-backend\.env
+
+2. Find the line:
+   GITHUB_TOKEN=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hanges
+
+3. Replace with your new token:
+   GITHUB_TOKEN=ghp_your_full_token_here
+
+4. Save and close
+
+5. Run the rebuild script:
+   .\rebuild-and-fix.ps1
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 🛑 IF SOMETHING GOES WRONG
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ERROR: "Docker is not running"
+   → Start Docker Desktop and wait for it to load
+   → Then run script again
+
+ERROR: "Docker build failed"
+   → Check internet connection (Docker needs to download layers)
+   → Try again
+   → If still fails, run: docker system prune -a
+   → Then run script again
+
+ERROR: "Token is INVALID"
+   → Make sure you copied the FULL token from GitHub
+   → GitHub doesn't show it again after generation
+   → Generate a new one if needed
+   → Make sure it starts with: ghp_
+   → Should be 40-50+ characters, not 26!
+
+WANT TO CHECK LOGS:
+   docker logs java-migration-app -f
+   (Press Ctrl+C to stop watching)
+
+WANT TO STOP THE APP:
+   docker-compose down
+
+WANT TO START AGAIN:
+   docker-compose up -d
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 📞 WHAT HAPPENS NEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After successful rebuild, you'll have:
+
+   ✅ Valid GitHub token (40+ chars)
+   ✅ .env file updated
+   ✅ Docker image built
+   ✅ Containers running
+   ✅ Application accessible at http://localhost:8001
+   ✅ Full Java Migration Accelerator ready to use:
+      • Analyze repositories
+      • Plan migrations
+      • Execute migrations
+      • Generate reports
+      • All without token errors!
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 🎯 QUICK COMMAND REFERENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Run the complete fix (RECOMMENDED):
+   .\rebuild-and-fix.ps1
+
+Manual steps (if script doesn't work):
+   # Stop
+   docker-compose down
+   
+   # Clean
+   docker system prune -f
+   
+   # Build
+   docker build -t java-migration-accelerator:latest -f Dockerfile .
+   
+   # Start
+   docker-compose up -d
+
+Check if running:
+   docker ps | Select-String java-migration
+
+View logs:
+   docker logs java-migration-app -f
+
+Stop everything:
+   docker-compose down
+
+Check token:
+   docker logs java-migration-app | Select-String "Token"
+
+API Health Check:
+   Invoke-WebRequest http://localhost:8001/api/java-versions
+
+Open app:
+   Start http://localhost:8001
+
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                    READY? LET'S GO!                                            ║
+║                                                                                ║
+║  1. Open VS Code Terminal (Ctrl+`)                                             ║
+║  2. Run: .\rebuild-and-fix.ps1                                                 ║
+║  3. When asked, paste your GitHub token (from https://github.com/settings/tokens) ║
+║  4. Wait for build (15-25 minutes)                                             ║
+║  5. Visit: http://localhost:8001                                               ║
+║                                                                                ║
+║  That's it! Your app will be running with a valid token! 🚀                    ║
+╚════════════════════════════════════════════════════════════════════════════════╝
