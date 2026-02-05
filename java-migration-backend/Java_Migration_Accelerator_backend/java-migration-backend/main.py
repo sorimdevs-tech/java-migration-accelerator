@@ -1712,11 +1712,19 @@ async def get_java_versions():
         },
         {
             "value": "24",
-            "label": "Java 24 (Latest)",
-            "release_type": "Latest",
+            "label": "Java 24 (Standard)",
+            "release_type": "Standard",
             "release_date": "2025",
             "eol_date": "2025",
-            "description": "Latest features and improvements"
+            "description": "Primitive types in patterns (preview), Module imports (preview)"
+        },
+        {
+            "value": "25",
+            "label": "Java 25 (Latest)",
+            "release_type": "Latest",
+            "release_date": "2025",
+            "eol_date": "2026",
+            "description": "Latest features and improvements, cutting-edge technology"
         }
     ]
     
@@ -1724,7 +1732,7 @@ async def get_java_versions():
         "source_versions": all_versions,
         "target_versions": all_versions,
         "lts_versions": [v for v in all_versions if v["release_type"] == "LTS"],
-        "latest_version": "24",
+        "latest_version": "25",
         "recommended_target": "21"  # Recommended is Java 21 LTS
     }
 

@@ -3065,6 +3065,26 @@ public class UserService {
               }}>
                 ⚠️ Select a source Java version first to see available target versions
               </div>
+            ) : targetVersions.filter(v => parseInt(v.value) > parseInt(selectedSourceVersion)).length === 0 ? (
+              // Already on latest version
+              <div style={{
+                padding: 16,
+                backgroundColor: "#f0fdf4",
+                border: "2px solid #10b981",
+                borderRadius: 8,
+                color: "#166534"
+              }}>
+                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+                  ✅ This repository is already on the latest version!
+                </div>
+                <div style={{ fontSize: 14, lineHeight: "1.5" }}>
+                  <p>Java {selectedSourceVersion} is the current latest version available.</p>
+                  <p>Your project is already modernized with the latest features and improvements.</p>
+                  <p style={{ margin: "10px 0 0 0", fontSize: 12, color: "#15803d" }}>
+                    💡 Consider upgrading to an LTS version for better long-term support or wait for the next release.
+                  </p>
+                </div>
+              </div>
             ) : (
               <div>
                 {/* Target Version Grid */}
